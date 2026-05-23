@@ -11,7 +11,14 @@ public sealed class ProductFieldDefinitionDto
     public ProductFieldType FieldType { get; set; }
     public bool IsRequired { get; set; }
     public bool IsVisibleOnListing { get; set; }
+    public bool IsVisibleOnProductPage { get; set; }
+    public bool IsSearchable { get; set; }
+    public bool IsFilterable { get; set; }
     public int DisplayOrder { get; set; }
+    public string? Placeholder { get; set; }
+    public string? HelpText { get; set; }
+    public string? DefaultValueJson { get; set; }
+    public string ValidationRulesJson { get; set; } = "{}";
     public string OptionsJson { get; set; } = "{}";
 }
 
@@ -22,7 +29,14 @@ public sealed class UpsertProductFieldDefinitionRequest
     public ProductFieldType FieldType { get; set; } = ProductFieldType.Text;
     public bool IsRequired { get; set; }
     public bool IsVisibleOnListing { get; set; } = true;
+    public bool IsVisibleOnProductPage { get; set; } = true;
+    public bool IsSearchable { get; set; }
+    public bool IsFilterable { get; set; }
     public int DisplayOrder { get; set; }
+    public string? Placeholder { get; set; }
+    public string? HelpText { get; set; }
+    public string? DefaultValueJson { get; set; }
+    public string ValidationRulesJson { get; set; } = "{}";
     public string OptionsJson { get; set; } = "{}";
 }
 
@@ -54,6 +68,7 @@ public sealed class ProductDto
     public decimal BasePrice { get; set; }
     public ProductStatus Status { get; set; }
     public string? PrimaryImageUrl { get; set; }
+    public DateTimeOffset? PublishedAt { get; set; }
     public IReadOnlyCollection<Guid> CategoryIds { get; set; } = [];
     public IReadOnlyCollection<ProductImageDto> Images { get; set; } = [];
     public IReadOnlyCollection<ProductCustomFieldValueDto> CustomFields { get; set; } = [];
@@ -68,6 +83,7 @@ public sealed class UpsertProductRequest
     public decimal BasePrice { get; set; }
     public ProductStatus Status { get; set; } = ProductStatus.Draft;
     public string? PrimaryImageUrl { get; set; }
+    public DateTimeOffset? PublishedAt { get; set; }
     public IReadOnlyCollection<Guid> CategoryIds { get; set; } = [];
     public IReadOnlyCollection<ProductImageDto> Images { get; set; } = [];
     public Dictionary<Guid, string> CustomFieldValues { get; set; } = [];

@@ -65,7 +65,14 @@ internal static class DtoMappers
         FieldType = field.FieldType,
         IsRequired = field.IsRequired,
         IsVisibleOnListing = field.IsVisibleOnListing,
+        IsVisibleOnProductPage = field.IsVisibleOnProductPage,
+        IsSearchable = field.IsSearchable,
+        IsFilterable = field.IsFilterable,
         DisplayOrder = field.DisplayOrder,
+        Placeholder = field.Placeholder,
+        HelpText = field.HelpText,
+        DefaultValueJson = field.DefaultValueJson,
+        ValidationRulesJson = field.ValidationRulesJson,
         OptionsJson = field.OptionsJson
     };
 
@@ -80,6 +87,7 @@ internal static class DtoMappers
         BasePrice = product.BasePrice,
         Status = product.Status,
         PrimaryImageUrl = product.PrimaryImageUrl,
+        PublishedAt = product.PublishedAt,
         CategoryIds = product.ProductCategories.Select(x => x.CategoryId).ToArray(),
         Images = product.Images.OrderBy(x => x.DisplayOrder).Select(x => new ProductImageDto
         {

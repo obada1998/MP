@@ -14,6 +14,7 @@ public sealed class Product : Entity, IStoreScoped
     public decimal BasePrice { get; set; }
     public ProductStatus Status { get; set; } = ProductStatus.Draft;
     public string? PrimaryImageUrl { get; set; }
+    public DateTimeOffset? PublishedAt { get; set; }
 
     public ICollection<ProductImage> Images { get; set; } = new List<ProductImage>();
     public ICollection<ProductCustomFieldValue> CustomFieldValues { get; set; } = new List<ProductCustomFieldValue>();
