@@ -245,7 +245,10 @@
                                               ToggleLockRequested="ToggleElementLock"
                                               ZIndexRequested="HandleZIndexRequest"
                                               InlineEditRequested="HandleInlineEdit"
-                                              MoveRequested="MoveElement" />
+                                              MoveRequested="MoveElement"
+                                              DragStarted="StartElementDrag"
+                                              DragEnded="ClearDrag"
+                                              DraggingElementId="@draggedElementId" />
                         }
                         @DropZone(new EditorDropTarget(null, index + 1), false)
                     }
@@ -508,18 +511,12 @@
             return;
         }
 
-        draggedComponentType = type;
-        draggedElementId = null;
-        canvasRect = await GetCanvasRectAsync();
-        showCanvasDropIndicator = false;
-        message = null;
+        await BeginDragAsync(type, null);
     }
 
-    private void StartElementDrag(string elementId)
+    private async Task StartElementDrag(string elementId)
     {
-        draggedElementId = elementId;
-        draggedComponentType = null;
-        message = null;
+        await BeginDragAsync(null, elementId);
     }
 
     private void ClearDrag()
@@ -553,6 +550,16 @@
         }
 
         ClearDrag();
+    }
+
+    private async Task BeginDragAsync(string? componentType, string? elementId)
+    {
+        draggedComponentType = componentType;
+        draggedElementId = elementId;
+        activeDropTarget = null;
+        showCanvasDropIndicator = false;
+        canvasRect = await GetCanvasRectAsync();
+        message = null;
     }
 
     private void HandleCanvasDragEnter()
