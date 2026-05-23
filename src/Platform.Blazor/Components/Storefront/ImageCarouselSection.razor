@@ -139,6 +139,11 @@
             return matchedUrls;
         }
 
+        if (raw.TrimStart().StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            return [raw.Trim('"', '\'', ' ')];
+        }
+
         return raw
             .Split([',', '\n', '\r', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
             .Select(url => url.Trim('"', '\'', ' '))
