@@ -99,6 +99,7 @@ public static class EditorComponentCatalog
         Define("form", "Form", "Lead-capture form container.", "Forms", "form"),
         Define("input", "Input", "Text, email, phone, or number field.", "Forms", "input"),
         Define("customHtml", "CustomHtmlSection", "Restricted custom markup.", "Custom", "code"),
+        Define("json", "JSON", "Render pretty-printed JSON data.", "Custom", "code"),
         Define("navBar", "Navigation", "Brand, links, and primary action.", "Layout", "nav"),
         Define("featureGrid", "Features", "Service, benefit, or highlight cards.", "Layout", "cards"),
         Define("testimonials", "Testimonials", "Customer quotes and social proof.", "Layout", "quote"),

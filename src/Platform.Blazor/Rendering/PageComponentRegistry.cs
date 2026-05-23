@@ -48,7 +48,8 @@ public static class PageComponentRegistry
             ["contactForm"] = typeof(FormSection),
             ["newsletterForm"] = typeof(FormSection),
             ["searchBox"] = typeof(InputSection),
-            ["customHtml"] = typeof(CustomHtmlSection)
+            ["customHtml"] = typeof(CustomHtmlSection),
+            ["json"] = typeof(JsonSection)
         };
 
     public static Type? Resolve(string? componentType)

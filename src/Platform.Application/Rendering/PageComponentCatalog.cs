@@ -49,6 +49,7 @@ public static class PageComponentCatalog
             ["newsletterForm"] = new("newsletterForm", "Newsletter form", "Newsletter signup form."),
             ["searchBox"] = new("searchBox", "Search box", "Search input with action."),
             ["customHtml"] = new("customHtml", "Custom HTML", "Restricted custom markup block.")
+            ,["json"] = new("json", "JSON", "Render structured JSON data in a formatted code block.")
         };
 
     public static IReadOnlyCollection<PageComponentDefinition> All => KnownComponents.Values.ToArray();
