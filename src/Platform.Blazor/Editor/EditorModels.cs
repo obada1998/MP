@@ -75,6 +75,7 @@ public static class EditorComponentCatalog
         Define("box", "Box/Container", "A boxed area that can hold child content.", "Basic", "layout"),
         Define("image", "Image", "Responsive image with caption.", "Media", "image"),
         Define("imageGallery", "ImageGallery", "Grid or carousel of images.", "Media", "image"),
+        Define("imageSlider", "ImageSlider", "Image carousel with selectable slides.", "Media", "image"),
         Define("videoEmbed", "VideoEmbed", "Embedded video by URL.", "Media", "image"),
         Define("icon", "Icon", "Small icon or symbol.", "Media", "logo"),
         Define("productGrid", "Product grid", "Dynamic catalog grid.", "Commerce", "grid"),

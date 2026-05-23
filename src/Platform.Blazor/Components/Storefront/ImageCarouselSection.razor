@@ -1,0 +1,126 @@
+@using Platform.Blazor.Rendering
+
+<section class="storefront-image-slider">
+    @if (Images.Count == 0)
+    {
+        <div class="alert alert-light border mb-0">Add images to this slider.</div>
+    }
+    else
+    {
+        var current = Images[CurrentIndex];
+
+        <figure class="storefront-image-slider-figure">
+            <img src="@current.Url" alt="@current.Alt" class="storefront-image-slider-image" style="object-fit:@ObjectFit" />
+            @if (!string.IsNullOrWhiteSpace(current.Caption))
+            {
+                <figcaption class="storefront-image-slider-caption">@current.Caption</figcaption>
+            }
+        </figure>
+
+        @if (Images.Count > 1)
+        {
+            <div class="storefront-image-slider-controls">
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="PreviousImage">Previous</button>
+                <span>@(CurrentIndex + 1) / @Images.Count</span>
+                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="NextImage">Next</button>
+            </div>
+
+            <div class="storefront-image-slider-thumbs">
+                @for (var i = 0; i < Images.Count; i++)
+                {
+                    var index = i;
+                    var item = Images[index];
+                    <button type="button"
+                            class="storefront-image-slider-thumb @(index == CurrentIndex ? "active" : "")"
+                            title="Select image @(index + 1)"
+                            @onclick="() => SelectImage(index)">
+                        <img src="@item.Url" alt="@item.Alt" />
+                    </button>
+                }
+            </div>
+        }
+    }
+</section>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private int CurrentIndex { get; set; }
+    private string ObjectFit => JsonProps.GetString(Section.Props, "objectFit", "cover");
+
+    private IReadOnlyList<SliderImage> Images => BuildImages();
+
+    private void NextImage()
+    {
+        if (Images.Count == 0)
+        {
+            return;
+        }
+
+        CurrentIndex = (CurrentIndex + 1) % Images.Count;
+    }
+
+    private void PreviousImage()
+    {
+        if (Images.Count == 0)
+        {
+            return;
+        }
+
+        CurrentIndex = (CurrentIndex - 1 + Images.Count) % Images.Count;
+    }
+
+    private void SelectImage(int index)
+    {
+        if (index < 0 || index >= Images.Count)
+        {
+            return;
+        }
+
+        CurrentIndex = index;
+    }
+
+    private IReadOnlyList<SliderImage> BuildImages()
+    {
+        if (Section.Props.TryGetPropertyValue("items", out var itemsNode) && itemsNode is JsonArray array)
+        {
+            var parsed = array
+                .OfType<JsonObject>()
+                .Select(item => new SliderImage(
+                    JsonProps.GetString(item, "url", ""),
+                    JsonProps.GetString(item, "alt", ""),
+                    JsonProps.GetString(item, "caption", "")))
+                .Where(item => !string.IsNullOrWhiteSpace(item.Url))
+                .ToArray();
+
+            if (parsed.Length > 0)
+            {
+                CurrentIndex = Math.Clamp(CurrentIndex, 0, parsed.Length - 1);
+                return parsed;
+            }
+        }
+
+        var csv = JsonProps.GetString(Section.Props, "imageUrls", "");
+        var urls = csv
+            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Where(url => !string.IsNullOrWhiteSpace(url))
+            .ToArray();
+
+        if (urls.Length == 0)
+        {
+            urls =
+            [
+                "https://placehold.co/1200x600?text=Slide+1",
+                "https://placehold.co/1200x600?text=Slide+2",
+                "https://placehold.co/1200x600?text=Slide+3"
+            ];
+        }
+
+        CurrentIndex = Math.Clamp(CurrentIndex, 0, urls.Length - 1);
+
+        return urls.Select((url, idx) => new SliderImage(url, $"Slide {idx + 1}", string.Empty)).ToArray();
+    }
+
+    private sealed record SliderImage(string Url, string Alt, string Caption);
+}
