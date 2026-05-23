@@ -128,16 +128,49 @@
             return Array.Empty<string>();
         }
 
-        if (raw.TrimStart().StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        var trimmedRaw = raw.Trim();
+
+        if (trimmedRaw.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
         {
-            return [raw.Trim('"', '\'', ' ')];
+            return [trimmedRaw.Trim('"', '\'', ' ')];
         }
 
-        return Regex.Split(raw, @"\s*[,;\n\r]+\s*(?=(?:https?://|data:|/))", RegexOptions.IgnoreCase)
+        if (trimmedRaw.StartsWith("[", StringComparison.Ordinal) && trimmedRaw.EndsWith("]", StringComparison.Ordinal))
+        {
+            var arrayValues = Regex.Matches(trimmedRaw, "\"([^\"]+)\"")
+                .Select(match => match.Groups[1].Value)
+                .Select(NormalizeUrl)
+                .Where(url => !string.IsNullOrWhiteSpace(url))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+
+            if (arrayValues.Length > 0)
+            {
+                return arrayValues;
+            }
+        }
+
+        return Regex.Split(trimmedRaw, @"[\n\r,;]+")
             .Select(url => url.Trim('"', '\'', ' '))
+            .Select(NormalizeUrl)
             .Where(url => !string.IsNullOrWhiteSpace(url))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+    }
+
+    private static string NormalizeUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return string.Empty;
+        }
+
+        if (url.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"https://{url}";
+        }
+
+        return url;
     }
 
     private sealed record SliderImage(string Url, string Alt, string Caption);
