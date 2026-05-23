@@ -1,0 +1,12 @@
+@using Microsoft.AspNetCore.Components.Forms
+<InputFile class="form-control" OnChange="OnChanged" />
+@if (!string.IsNullOrWhiteSpace(FileName)) { <small class="text-muted">Selected: @FileName</small> }
+@code {
+ [Parameter] public EventCallback<string> ValueChanged { get; set; }
+ private string? FileName;
+ private async Task OnChanged(InputFileChangeEventArgs e)
+ {
+   FileName = e.File.Name;
+   await ValueChanged.InvokeAsync(FileName);
+ }
+}

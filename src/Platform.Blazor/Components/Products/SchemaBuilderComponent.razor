@@ -1,0 +1,32 @@
+@using Platform.Application.Products
+@using Platform.Domain.Enums
+<div>
+ <h2 class="h5 mb-3">Product Schema Builder</h2>
+ <div class="mb-2"><button class="btn btn-sm btn-outline-primary" @onclick="Add">Add field</button></div>
+ @foreach (var field in Fields.OrderBy(x=>x.DisplayOrder))
+ {
+  <div class="card mb-2" draggable="true" @ondragstart="() => dragKey=field.Key" @ondragover:preventDefault @ondrop="() => Drop(field.Key)">
+   <div class="card-body">
+    <div class="d-flex gap-2">
+      <InputText class="form-control" @bind-Value="field.Label" placeholder="Label" />
+      <InputText class="form-control" @bind-Value="field.Key" placeholder="Key" />
+      <InputSelect class="form-select" @bind-Value="field.FieldType">@foreach(var t in Enum.GetValues<ProductFieldType>()){<option value="@t">@t</option>}</InputSelect>
+    </div>
+    <div class="mt-2 d-flex gap-3">
+      <label><InputCheckbox @bind-Value="field.IsRequired"/> Required</label>
+      <label><InputCheckbox @bind-Value="field.IsVisibleOnProductPage"/> Visible</label>
+      <button class="btn btn-sm btn-outline-secondary" @onclick="()=>Duplicate(field)">Duplicate</button>
+      <button class="btn btn-sm btn-outline-danger" @onclick="()=>Remove.InvokeAsync(field)">Delete</button>
+    </div>
+   </div>
+  </div>
+ }
+</div>
+@code {
+ [Parameter] public List<UpsertProductFieldDefinitionRequest> Fields { get; set; } = [];
+ [Parameter] public EventCallback<UpsertProductFieldDefinitionRequest> Remove { get; set; }
+ private string? dragKey;
+ private void Add(){ Fields.Add(new UpsertProductFieldDefinitionRequest{Key=$"field_{Fields.Count+1}",Label="New Field",FieldType=ProductFieldType.Text,DisplayOrder=Fields.Count}); }
+ private void Duplicate(UpsertProductFieldDefinitionRequest f){ Fields.Add(new UpsertProductFieldDefinitionRequest{Key=f.Key+"_copy",Label=f.Label+" Copy",FieldType=f.FieldType,IsRequired=f.IsRequired,DisplayOrder=Fields.Count,OptionsJson=f.OptionsJson,ValidationRulesJson=f.ValidationRulesJson}); }
+ private void Drop(string id){ }
+}

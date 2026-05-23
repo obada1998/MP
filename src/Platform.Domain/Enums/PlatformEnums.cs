@@ -18,9 +18,12 @@ public enum ProductFieldType
     Text = 1,
     Number = 2,
     Money = 3,
+    Currency = 16,
     TextArea = 4,
     Boolean = 5,
+    Toggle = 17,
     Date = 6,
+    Time = 18,
     Select = 7,
     MultiSelect = 8,
     Checkbox = 9,
@@ -29,6 +32,9 @@ public enum ProductFieldType
     File = 12,
     RichText = 13,
     Color = 14,
+    Url = 19,
+    Email = 20,
+    Phone = 21,
     Json = 15
 }
 
