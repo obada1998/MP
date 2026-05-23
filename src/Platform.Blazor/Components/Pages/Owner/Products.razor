@@ -2,6 +2,7 @@
 @attribute [ClientAuthorize(Roles = "StoreOwner,StoreStaff,PlatformAdmin")]
 @rendermode @(new InteractiveServerRenderMode(prerender: false))
 @using System.Text.Json
+@using Platform.Blazor.Components.Products
 @inject PlatformApiClient Api
 
 <PageTitle>Products</PageTitle>
@@ -86,7 +87,7 @@
                                 {
                                     <div class="col-md-6">
                                         <label class="form-label">@field.Label @(field.IsRequired ? "*" : "")</label>
-                                        @RenderFieldInput(field)
+                                        <DynamicFieldRenderer Field="field" Values="customValues" />
                                     </div>
                                 }
                             </div>
@@ -134,42 +135,37 @@
 
         <div class="col-xl-4">
             <div class="panel">
-                <h2 class="h5 mb-3">Product fields</h2>
+                <h2 class="h5 mb-3">Product Schema Builder</h2>
                 <EditForm Model="fieldForm" OnValidSubmit="CreateField">
-                    <div class="mb-2">
-                        <label class="form-label">Key</label>
-                        <InputText class="form-control" @bind-Value="fieldForm.Key" />
+                    <div class="row g-2">
+                        <div class="col-6"><InputText class="form-control" @bind-Value="fieldForm.Key" placeholder="internal_key" /></div>
+                        <div class="col-6"><InputText class="form-control" @bind-Value="fieldForm.Label" placeholder="Display label" /></div>
+                        <div class="col-12"><InputSelect class="form-select" @bind-Value="fieldForm.FieldType">@foreach (var type in Enum.GetValues<ProductFieldType>()) { <option value="@type">@type</option> }</InputSelect></div>
+                        <div class="col-12"><InputText class="form-control" @bind-Value="fieldForm.Placeholder" placeholder="Placeholder/help" /></div>
+                        <div class="col-12"><InputTextArea class="form-control" @bind-Value="fieldForm.OptionsJson" placeholder='Options JSON e.g. ["Small","Medium"]' /></div>
+                        <div class="col-12"><InputTextArea class="form-control" @bind-Value="fieldForm.ValidationRulesJson" placeholder='Validation JSON e.g. {"minLength":2}' /></div>
+                        <div class="col-6 form-check"><InputCheckbox class="form-check-input" @bind-Value="fieldForm.IsRequired" /><label class="form-check-label">Required</label></div>
+                        <div class="col-6 form-check"><InputCheckbox class="form-check-input" @bind-Value="fieldForm.IsVisibleOnProductPage" /><label class="form-check-label">Enabled</label></div>
                     </div>
-                    <div class="mb-2">
-                        <label class="form-label">Label</label>
-                        <InputText class="form-control" @bind-Value="fieldForm.Label" />
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label">Type</label>
-                        <InputSelect class="form-select" @bind-Value="fieldForm.FieldType">
-                            @foreach (var type in Enum.GetValues<ProductFieldType>())
-                            {
-                                <option value="@type">@type</option>
-                            }
-                        </InputSelect>
-                    </div>
-                    <div class="form-check mb-2">
-                        <InputCheckbox class="form-check-input" @bind-Value="fieldForm.IsRequired" />
-                        <label class="form-check-label">Required</label>
-                    </div>
-                    <button class="btn btn-outline-primary w-100">Add field</button>
+                    <button class="btn btn-outline-primary w-100 mt-2">Add field</button>
                 </EditForm>
                 <hr />
                 <div class="list-group list-group-flush">
-                    @foreach (var field in fields ?? [])
+                    @foreach (var field in fields?.OrderBy(x=>x.DisplayOrder) ?? [])
                     {
-                        <div class="list-group-item d-flex justify-content-between align-items-center px-0">
-                            <span>@field.Label <small class="text-muted">(@field.Key)</small></span>
-                            <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteField(field.Id)">Remove</button>
+                        <div class="list-group-item px-0">
+                            <div class="d-flex justify-content-between">
+                                <span>@field.Label <small class="text-muted">(@field.Key)</small></span>
+                                <div class="d-flex gap-1">
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => MoveField(field, -1)">↑</button>
+                                    <button class="btn btn-sm btn-outline-secondary" @onclick="() => MoveField(field, 1)">↓</button>
+                                    <button class="btn btn-sm btn-outline-info" @onclick="() => DuplicateField(field)">Duplicate</button>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteField(field.Id)">Remove</button>
+                                </div>
+                            </div>
                         </div>
                     }
-                </div>
-            </div>
+                </div></div>
         </div>
     </div>
 </div>
@@ -303,48 +299,45 @@
         }
     }
 
-    private RenderFragment RenderFieldInput(ProductFieldDefinitionDto field) => builder =>
+    private async Task MoveField(ProductFieldDefinitionDto field, int delta)
     {
-        var sequence = 0;
-        var value = GetFieldDisplayValue(field.Id);
-        var inputType = field.FieldType is ProductFieldType.Number or ProductFieldType.Money ? "number"
-            : field.FieldType == ProductFieldType.Date ? "date"
-            : field.FieldType == ProductFieldType.Color ? "color"
-            : "text";
-
-        builder.OpenElement(sequence++, "input");
-        builder.AddAttribute(sequence++, "class", "form-control");
-        builder.AddAttribute(sequence++, "type", inputType);
-        builder.AddAttribute(sequence++, "value", value);
-        builder.AddAttribute(sequence++, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, args => SetFieldValue(field, args.Value?.ToString() ?? string.Empty)));
-        builder.CloseElement();
-    };
-
-    private string GetFieldDisplayValue(Guid fieldId)
-    {
-        if (!customValues.TryGetValue(fieldId, out var json) || string.IsNullOrWhiteSpace(json))
+        var target = fields?.OrderBy(x=>x.DisplayOrder).ToList() ?? [];
+        var idx = target.FindIndex(x=>x.Id==field.Id);
+        if (idx < 0) return;
+        var swap = idx + delta;
+        if (swap < 0 || swap >= target.Count) return;
+        (target[idx], target[swap]) = (target[swap], target[idx]);
+        for (var i=0;i<target.Count;i++)
         {
-            return string.Empty;
+            var f = target[i];
+            await Api.PutAsync<UpsertProductFieldDefinitionRequest, ProductFieldDefinitionDto>($"api/stores/{StoreId}/products/field-definitions/{f.Id}", new UpsertProductFieldDefinitionRequest
+            {
+                Key=f.Key,Label=f.Label,FieldType=f.FieldType,IsRequired=f.IsRequired,IsVisibleOnListing=f.IsVisibleOnListing,IsVisibleOnProductPage=f.IsVisibleOnProductPage,IsSearchable=f.IsSearchable,IsFilterable=f.IsFilterable,DisplayOrder=i,Placeholder=f.Placeholder,HelpText=f.HelpText,DefaultValueJson=f.DefaultValueJson,ValidationRulesJson=f.ValidationRulesJson,OptionsJson=f.OptionsJson
+            });
         }
-
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            return document.RootElement.ValueKind == JsonValueKind.String ? document.RootElement.GetString() ?? string.Empty : document.RootElement.ToString();
-        }
-        catch
-        {
-            return json;
-        }
+        await Load();
     }
 
-    private void SetFieldValue(ProductFieldDefinitionDto field, string value)
+    private async Task DuplicateField(ProductFieldDefinitionDto field)
     {
-        customValues[field.Id] = field.FieldType switch
+        await Api.PostAsync<UpsertProductFieldDefinitionRequest, ProductFieldDefinitionDto>($"api/stores/{StoreId}/products/field-definitions", new UpsertProductFieldDefinitionRequest
         {
-            ProductFieldType.Number or ProductFieldType.Money => decimal.TryParse(value, out var number) ? number.ToString(System.Globalization.CultureInfo.InvariantCulture) : "0",
-            ProductFieldType.Boolean => bool.TryParse(value, out var boolean) && boolean ? "true" : "false",
-            _ => JsonSerializer.Serialize(value)
-        };
+            Key = field.Key + "_copy",
+            Label = field.Label + " Copy",
+            FieldType = field.FieldType,
+            IsRequired = field.IsRequired,
+            IsVisibleOnListing = field.IsVisibleOnListing,
+            IsVisibleOnProductPage = field.IsVisibleOnProductPage,
+            IsSearchable = field.IsSearchable,
+            IsFilterable = field.IsFilterable,
+            DisplayOrder = field.DisplayOrder + 1,
+            Placeholder = field.Placeholder,
+            HelpText = field.HelpText,
+            DefaultValueJson = field.DefaultValueJson,
+            ValidationRulesJson = field.ValidationRulesJson,
+            OptionsJson = field.OptionsJson
+        });
+        await Load();
     }
+
 }

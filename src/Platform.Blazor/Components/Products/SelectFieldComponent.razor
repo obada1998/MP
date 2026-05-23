@@ -1,0 +1,20 @@
+@using System.Text.Json
+@using Platform.Application.Products
+<select class="form-select" value="@Value" @onchange="OnChanged" multiple="@IsMulti">
+    @foreach (var option in Options)
+    {
+        <option value="@option">@option</option>
+    }
+</select>
+@code {
+ [Parameter, EditorRequired] public ProductFieldDefinitionDto Field { get; set; } = default!;
+ [Parameter] public string Value { get; set; } = string.Empty;
+ [Parameter] public EventCallback<string> ValueChanged { get; set; }
+ [Parameter] public bool IsMulti { get; set; }
+ private IReadOnlyCollection<string> Options => ParseOptions(Field.OptionsJson);
+ private Task OnChanged(ChangeEventArgs e) => ValueChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty);
+ private static IReadOnlyCollection<string> ParseOptions(string json)
+ {
+    try { return JsonSerializer.Deserialize<string[]>(json) ?? []; } catch { return []; }
+ }
+}

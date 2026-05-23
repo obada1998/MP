@@ -1,0 +1,32 @@
+@using Platform.Application.Products
+@using Platform.Domain.Enums
+@using System.Text.Json
+@if (Field.FieldType is ProductFieldType.Text or ProductFieldType.TextArea or ProductFieldType.RichText or ProductFieldType.Url or ProductFieldType.Email or ProductFieldType.Phone)
+{
+    <TextFieldComponent Field="Field" Value="@GetString()" InputType="@ResolveInputType(Field.FieldType)" ValueChanged="SetString" />
+}
+else if (Field.FieldType is ProductFieldType.Select or ProductFieldType.Radio or ProductFieldType.MultiSelect)
+{
+    <SelectFieldComponent Field="Field" Value="@GetString()" IsMulti="@(Field.FieldType==ProductFieldType.MultiSelect)" ValueChanged="SetString" />
+}
+else if (Field.FieldType is ProductFieldType.Checkbox or ProductFieldType.Boolean or ProductFieldType.Toggle)
+{
+    <CheckboxFieldComponent Field="Field" Value="@GetBool()" ValueChanged="SetBool" />
+}
+else if (Field.FieldType is ProductFieldType.File or ProductFieldType.Image)
+{
+    <FileUploadComponent ValueChanged="SetString" />
+}
+else
+{
+    <TextFieldComponent Field="Field" Value="@GetString()" InputType="@ResolveInputType(Field.FieldType)" ValueChanged="SetString" />
+}
+@code {
+ [Parameter,EditorRequired] public ProductFieldDefinitionDto Field { get; set; } = default!;
+ [Parameter,EditorRequired] public Dictionary<Guid,string> Values { get; set; } = default!;
+ private string GetString(){ if(!Values.TryGetValue(Field.Id,out var j)) return ""; try{ using var d=JsonDocument.Parse(j); return d.RootElement.ToString(); } catch{return j;} }
+ private bool GetBool(){ if(!Values.TryGetValue(Field.Id,out var j)) return false; return j.Contains("true", StringComparison.OrdinalIgnoreCase); }
+ private Task SetString(string v){ Values[Field.Id]=JsonSerializer.Serialize(v); return Task.CompletedTask; }
+ private Task SetBool(bool v){ Values[Field.Id]=v?"true":"false"; return Task.CompletedTask; }
+ private static string ResolveInputType(ProductFieldType type)=> type switch { ProductFieldType.Number=>"number", ProductFieldType.Money or ProductFieldType.Currency=>"number", ProductFieldType.Date=>"date", ProductFieldType.Time=>"time", ProductFieldType.Color=>"color", ProductFieldType.Email=>"email", ProductFieldType.Url=>"url", ProductFieldType.Phone=>"tel", _=>"text"};
+}

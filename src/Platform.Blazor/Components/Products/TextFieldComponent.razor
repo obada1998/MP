@@ -1,0 +1,12 @@
+@using Platform.Application.Products
+<div>
+  <input class="form-control" type="@InputType" value="@Value" placeholder="@Field.Placeholder" @onchange="OnChanged" />
+  @if (!string.IsNullOrWhiteSpace(Field.HelpText)) { <small class="text-muted">@Field.HelpText</small> }
+</div>
+@code {
+ [Parameter, EditorRequired] public ProductFieldDefinitionDto Field { get; set; } = default!;
+ [Parameter] public string Value { get; set; } = string.Empty;
+ [Parameter] public EventCallback<string> ValueChanged { get; set; }
+ [Parameter] public string InputType { get; set; } = "text";
+ private Task OnChanged(ChangeEventArgs e) => ValueChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty);
+}
