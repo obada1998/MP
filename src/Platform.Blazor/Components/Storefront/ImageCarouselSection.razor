@@ -135,9 +135,8 @@
             return [trimmed.Trim('"', '\'', ' ')];
         }
 
-        // Split only on separators that are likely between URLs.
-        // This avoids breaking URLs that legitimately contain commas in their query string.
-        var separators = new Regex(@"(?:\r\n|\r|\n|;)|,(?=\s*(?:https?://|www\.))", RegexOptions.IgnoreCase);
+        // Support comma-separated URLs as documented in the page builder UI.
+        var separators = new Regex(@"(?:\r\n|\r|\n|;|,)");
 
         return separators.Split(trimmed)
             .Select(url => url.Trim('"', '\'', ' '))
