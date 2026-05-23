@@ -128,12 +128,18 @@
             return Array.Empty<string>();
         }
 
-        if (raw.TrimStart().StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        var trimmed = raw.Trim();
+
+        if (trimmed.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
         {
-            return [raw.Trim('"', '\'', ' ')];
+            return [trimmed.Trim('"', '\'', ' ')];
         }
 
-        return Regex.Split(raw, @"\s*[,;\n\r]+\s*")
+        // Split only on separators that are likely between URLs.
+        // This avoids breaking URLs that legitimately contain commas in their query string.
+        var separators = new Regex(@"(?:\r\n|\r|\n|;)|,(?=\s*(?:https?://|www\.))", RegexOptions.IgnoreCase);
+
+        return separators.Split(trimmed)
             .Select(url => url.Trim('"', '\'', ' '))
             .Select(NormalizeUrl)
             .Where(url => !string.IsNullOrWhiteSpace(url))
