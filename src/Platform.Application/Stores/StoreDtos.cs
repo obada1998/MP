@@ -21,6 +21,7 @@ public sealed class CreateStoreRequest
     public string? LogoUrl { get; set; }
     public string? Domain { get; set; }
     public string ThemeName { get; set; } = "Default";
+    public IReadOnlyCollection<string> DefaultPages { get; set; } = [];
 }
 
 public sealed class UpdateStoreRequest
