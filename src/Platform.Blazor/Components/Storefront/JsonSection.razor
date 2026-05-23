@@ -1,0 +1,58 @@
+@using Platform.Blazor.Rendering
+@using System.Text.Json
+@using System.Text.Json.Nodes
+
+<section class="py-4">
+    <div class="container">
+        @if (!string.IsNullOrWhiteSpace(Heading))
+        {
+            <h2>@Heading</h2>
+        }
+
+        <pre class="p-3 rounded border bg-light"><code>@JsonText</code></pre>
+    </div>
+</section>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private string Heading => JsonProps.GetString(Section.Props, "heading", "JSON");
+
+    private string JsonText
+    {
+        get
+        {
+            if (Section.Props.TryGetPropertyValue("json", out var jsonNode) && jsonNode is not null)
+            {
+                return Pretty(jsonNode);
+            }
+
+            var rawText = JsonProps.GetString(Section.Props, "text", "{\n  \"message\": \"Add JSON in the builder using props.json\"\n}");
+            return Pretty(rawText);
+        }
+    }
+
+    private static string Pretty(JsonNode node)
+    {
+        return node.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+    }
+
+    private static string Pretty(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "{}";
+        }
+
+        try
+        {
+            var parsed = JsonNode.Parse(value);
+            return parsed is null ? value : Pretty(parsed);
+        }
+        catch (JsonException)
+        {
+            return value;
+        }
+    }
+}
