@@ -1,3 +1,4 @@
+@implements IDisposable
 @using System.Text.RegularExpressions
 @using Platform.Blazor.Rendering
 
@@ -11,35 +12,23 @@
         var current = Images[CurrentIndex];
 
         <figure class="storefront-image-slider-figure">
+            @if (Images.Count > 1)
+            {
+                <button type="button" class="storefront-image-slider-arrow left" @onclick="PreviousImage" aria-label="Previous image">&#10094;</button>
+            }
+
             <img src="@current.Url" alt="@current.Alt" class="storefront-image-slider-image" style="object-fit:@ObjectFit" />
+
+            @if (Images.Count > 1)
+            {
+                <button type="button" class="storefront-image-slider-arrow right" @onclick="NextImage" aria-label="Next image">&#10095;</button>
+            }
+
             @if (!string.IsNullOrWhiteSpace(current.Caption))
             {
                 <figcaption class="storefront-image-slider-caption">@current.Caption</figcaption>
             }
         </figure>
-
-        @if (Images.Count > 1)
-        {
-            <div class="storefront-image-slider-controls">
-                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="PreviousImage">Previous</button>
-                <span>@(CurrentIndex + 1) / @Images.Count</span>
-                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="NextImage">Next</button>
-            </div>
-
-            <div class="storefront-image-slider-thumbs">
-                @for (var i = 0; i < Images.Count; i++)
-                {
-                    var index = i;
-                    var item = Images[index];
-                    <button type="button"
-                            class="storefront-image-slider-thumb @(index == CurrentIndex ? "active" : "")"
-                            title="Select image @(index + 1)"
-                            @onclick="() => SelectImage(index)">
-                        <img src="@item.Url" alt="@item.Alt" />
-                    </button>
-                }
-            </div>
-        }
     }
 </section>
 
@@ -48,6 +37,7 @@
     [Parameter] public string StoreKey { get; set; } = string.Empty;
 
     private int CurrentIndex { get; set; }
+    private CancellationTokenSource? AutoPlayCts { get; set; }
     private IReadOnlyList<SliderImage> CachedImages { get; set; } = Array.Empty<SliderImage>();
     private string ObjectFit => JsonProps.GetString(Section.Props, "objectFit", "cover");
 
@@ -56,6 +46,7 @@
     protected override void OnParametersSet()
     {
         CachedImages = BuildImages();
+        RestartAutoPlay();
     }
 
     private void NextImage()
@@ -78,14 +69,50 @@
         CurrentIndex = (CurrentIndex - 1 + Images.Count) % Images.Count;
     }
 
-    private void SelectImage(int index)
+    public void Dispose()
     {
-        if (index < 0 || index >= Images.Count)
+        AutoPlayCts?.Cancel();
+        AutoPlayCts?.Dispose();
+    }
+
+    private void RestartAutoPlay()
+    {
+        AutoPlayCts?.Cancel();
+        AutoPlayCts?.Dispose();
+        AutoPlayCts = null;
+
+        if (Images.Count <= 1)
         {
             return;
         }
 
-        CurrentIndex = index;
+        AutoPlayCts = new CancellationTokenSource();
+        var token = AutoPlayCts.Token;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (!token.IsCancellationRequested)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(4), token);
+
+                    if (token.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
+                    await InvokeAsync(() =>
+                    {
+                        NextImage();
+                        StateHasChanged();
+                    });
+                }
+            }
+            catch (TaskCanceledException)
+            {
+            }
+        }, token);
     }
 
     private IReadOnlyList<SliderImage> BuildImages()
