@@ -1,6 +1,8 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Platform.Application.Abstractions;
 using Platform.Application.Stores;
+using Platform.Application.Pages;
 using Platform.Domain.Entities;
 using Platform.Domain.Enums;
 using Platform.Infrastructure.Data;
@@ -65,6 +67,33 @@ public sealed class StoreService(
         });
         dbContext.StoreSettings.Add(new StoreSettings { StoreId = store.Id });
         dbContext.ThemeSettings.Add(new ThemeSettings { StoreId = store.Id, ThemeName = store.ThemeName });
+
+        var selectedDefaultPages = DefaultSystemPages.Resolve(request.DefaultPages);
+        var now = DateTimeOffset.UtcNow;
+        foreach (var page in selectedDefaultPages)
+        {
+            var pageEntity = new Page
+            {
+                StoreId = store.Id,
+                Title = page.Title,
+                Slug = page.Slug,
+                IsHomePage = page.IsHomePage,
+                IsPublished = page.IsPublished,
+                PublishedAt = page.IsPublished ? now : null
+            };
+            dbContext.Pages.Add(pageEntity);
+
+            var layout = PageTemplateCatalog.CreateLayout(page.TemplateId, pageEntity.Id.ToString("n"));
+            dbContext.PageLayouts.Add(new PageLayout
+            {
+                StoreId = store.Id,
+                PageId = pageEntity.Id,
+                Version = 1,
+                Status = page.IsPublished ? PageLayoutStatus.Published : PageLayoutStatus.Draft,
+                PublishedAt = page.IsPublished ? now : null,
+                LayoutJson = JsonSerializer.Serialize(layout)
+            });
+        }
 
         await dbContext.SaveChangesAsync(cancellationToken);
         var dto = store.ToDto();
