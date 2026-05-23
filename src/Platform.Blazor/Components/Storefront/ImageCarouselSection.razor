@@ -48,9 +48,15 @@
     [Parameter] public string StoreKey { get; set; } = string.Empty;
 
     private int CurrentIndex { get; set; }
+    private IReadOnlyList<SliderImage> CachedImages { get; set; } = Array.Empty<SliderImage>();
     private string ObjectFit => JsonProps.GetString(Section.Props, "objectFit", "cover");
 
-    private IReadOnlyList<SliderImage> Images => BuildImages();
+    private IReadOnlyList<SliderImage> Images => CachedImages;
+
+    protected override void OnParametersSet()
+    {
+        CachedImages = BuildImages();
+    }
 
     private void NextImage()
     {
