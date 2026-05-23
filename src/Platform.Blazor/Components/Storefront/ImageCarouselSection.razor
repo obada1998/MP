@@ -102,10 +102,7 @@
         }
 
         var csv = JsonProps.GetString(Section.Props, "imageUrls", "");
-        var urls = csv
-            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-            .Where(url => !string.IsNullOrWhiteSpace(url))
-            .ToArray();
+        var urls = ParseImageUrls(csv);
 
         if (urls.Length == 0)
         {
@@ -120,6 +117,22 @@
         CurrentIndex = Math.Clamp(CurrentIndex, 0, urls.Length - 1);
 
         return urls.Select((url, idx) => new SliderImage(url, $"Slide {idx + 1}", string.Empty)).ToArray();
+    }
+
+
+    private static string[] ParseImageUrls(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return Array.Empty<string>();
+        }
+
+        return raw
+            .Split([',', '\n', '\r', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Select(url => url.Trim('"', '\'', ' '))
+            .Where(url => !string.IsNullOrWhiteSpace(url))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
     }
 
     private sealed record SliderImage(string Url, string Alt, string Caption);
