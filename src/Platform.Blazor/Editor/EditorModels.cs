@@ -120,7 +120,7 @@ public static class EditorComponentCatalog
             return new EditorComponentDefinition("unknown", "Unknown", string.Empty, "Advanced", "box");
         }
 
-        return All.SingleOrDefault(component => component.Type.Equals(type, StringComparison.OrdinalIgnoreCase))
+        return All.FirstOrDefault(component => component.Type.Equals(type, StringComparison.OrdinalIgnoreCase))
             ?? new EditorComponentDefinition(type, PageComponentCatalog.Get(type).Name, string.Empty, "Advanced", "box");
     }
 
