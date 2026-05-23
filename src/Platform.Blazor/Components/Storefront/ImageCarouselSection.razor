@@ -133,11 +133,27 @@
             return [raw.Trim('"', '\'', ' ')];
         }
 
-        return Regex.Split(raw, @"\s*[,;\n\r]+\s*(?=(?:https?://|data:|/))", RegexOptions.IgnoreCase)
+        return Regex.Split(raw, @"\s*[,;\n\r]+\s*")
             .Select(url => url.Trim('"', '\'', ' '))
+            .Select(NormalizeUrl)
             .Where(url => !string.IsNullOrWhiteSpace(url))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+    }
+
+    private static string NormalizeUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return string.Empty;
+        }
+
+        if (url.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"https://{url}";
+        }
+
+        return url;
     }
 
     private sealed record SliderImage(string Url, string Alt, string Caption);
