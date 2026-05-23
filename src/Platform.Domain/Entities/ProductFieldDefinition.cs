@@ -12,6 +12,13 @@ public sealed class ProductFieldDefinition : Entity, IStoreScoped
     public ProductFieldType FieldType { get; set; } = ProductFieldType.Text;
     public bool IsRequired { get; set; }
     public bool IsVisibleOnListing { get; set; } = true;
+    public bool IsVisibleOnProductPage { get; set; } = true;
+    public bool IsSearchable { get; set; }
+    public bool IsFilterable { get; set; }
     public int DisplayOrder { get; set; }
+    public string? Placeholder { get; set; }
+    public string? HelpText { get; set; }
+    public string? DefaultValueJson { get; set; }
+    public string ValidationRulesJson { get; set; } = "{}";
     public string OptionsJson { get; set; } = "{}";
 }

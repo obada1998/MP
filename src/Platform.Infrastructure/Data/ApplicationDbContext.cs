@@ -17,6 +17,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<ProductFieldDefinition> ProductFieldDefinitions => Set<ProductFieldDefinition>();
     public DbSet<ProductCustomFieldValue> ProductCustomFieldValues => Set<ProductCustomFieldValue>();
     public DbSet<ProductImage> ProductImages => Set<ProductImage>();
+    public DbSet<ProductLayoutDefinition> ProductLayoutDefinitions => Set<ProductLayoutDefinition>();
     public DbSet<Category> Categories => Set<Category>();
     public DbSet<ProductCategory> ProductCategories => Set<ProductCategory>();
     public DbSet<Page> Pages => Set<Page>();
@@ -131,6 +132,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(x => x.Sku).HasMaxLength(80);
             entity.Property(x => x.Description).HasColumnType("nvarchar(max)");
             entity.Property(x => x.BasePrice).HasPrecision(18, 2);
+            entity.HasIndex(x => new { x.StoreId, x.PublishedAt });
             entity.HasIndex(x => new { x.StoreId, x.Slug }).IsUnique();
             entity.HasIndex(x => new { x.StoreId, x.Status });
             entity.HasOne(x => x.Store)
@@ -143,6 +145,10 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         {
             entity.Property(x => x.Key).HasMaxLength(80).IsRequired();
             entity.Property(x => x.Label).HasMaxLength(160).IsRequired();
+            entity.Property(x => x.Placeholder).HasMaxLength(180);
+            entity.Property(x => x.HelpText).HasMaxLength(500);
+            entity.Property(x => x.DefaultValueJson).HasColumnType("nvarchar(max)");
+            entity.Property(x => x.ValidationRulesJson).HasColumnType("nvarchar(max)");
             entity.Property(x => x.OptionsJson).HasColumnType("nvarchar(max)");
             entity.HasIndex(x => new { x.StoreId, x.Key }).IsUnique();
             entity.HasOne(x => x.Store)
@@ -172,6 +178,18 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasOne(x => x.Product)
                 .WithMany(x => x.Images)
                 .HasForeignKey(x => x.ProductId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+
+        builder.Entity<ProductLayoutDefinition>(entity =>
+        {
+            entity.Property(x => x.Name).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.LayoutJson).HasColumnType("nvarchar(max)");
+            entity.HasIndex(x => new { x.StoreId, x.Name }).IsUnique();
+            entity.HasOne(x => x.Store)
+                .WithMany()
+                .HasForeignKey(x => x.StoreId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

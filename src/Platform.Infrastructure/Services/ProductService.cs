@@ -85,6 +85,8 @@ public sealed class ProductService(
     {
         await storeAccessService.EnsureStoreAccessAsync(userId, storeId, CatalogEditors, cancellationToken);
         JsonGuards.EnsureValidJson(request.OptionsJson, nameof(request.OptionsJson));
+        JsonGuards.EnsureValidJson(request.ValidationRulesJson, nameof(request.ValidationRulesJson));
+        if (!string.IsNullOrWhiteSpace(request.DefaultValueJson)) JsonGuards.EnsureValidJson(request.DefaultValueJson, nameof(request.DefaultValueJson));
         var key = NormalizeFieldKey(request.Key);
         if (await dbContext.ProductFieldDefinitions.AnyAsync(x => x.StoreId == storeId && x.Key == key, cancellationToken))
         {
@@ -102,6 +104,8 @@ public sealed class ProductService(
     {
         await storeAccessService.EnsureStoreAccessAsync(userId, storeId, CatalogEditors, cancellationToken);
         JsonGuards.EnsureValidJson(request.OptionsJson, nameof(request.OptionsJson));
+        JsonGuards.EnsureValidJson(request.ValidationRulesJson, nameof(request.ValidationRulesJson));
+        if (!string.IsNullOrWhiteSpace(request.DefaultValueJson)) JsonGuards.EnsureValidJson(request.DefaultValueJson, nameof(request.DefaultValueJson));
         var field = await dbContext.ProductFieldDefinitions.SingleOrDefaultAsync(x => x.StoreId == storeId && x.Id == fieldId, cancellationToken)
             ?? throw new KeyNotFoundException("Product field definition not found.");
 
@@ -143,6 +147,7 @@ public sealed class ProductService(
         product.BasePrice = request.BasePrice;
         product.Status = request.Status;
         product.PrimaryImageUrl = request.PrimaryImageUrl;
+        product.PublishedAt = request.Status == ProductStatus.Active ? (product.PublishedAt ?? DateTimeOffset.UtcNow) : null;
 
         product.Images.Clear();
         foreach (var image in request.Images.OrderBy(x => x.DisplayOrder))
@@ -239,7 +244,14 @@ public sealed class ProductService(
         field.FieldType = request.FieldType;
         field.IsRequired = request.IsRequired;
         field.IsVisibleOnListing = request.IsVisibleOnListing;
+        field.IsVisibleOnProductPage = request.IsVisibleOnProductPage;
+        field.IsSearchable = request.IsSearchable;
+        field.IsFilterable = request.IsFilterable;
         field.DisplayOrder = request.DisplayOrder;
+        field.Placeholder = request.Placeholder?.Trim();
+        field.HelpText = request.HelpText?.Trim();
+        field.DefaultValueJson = request.DefaultValueJson;
+        field.ValidationRulesJson = string.IsNullOrWhiteSpace(request.ValidationRulesJson) ? "{}" : request.ValidationRulesJson;
         field.OptionsJson = string.IsNullOrWhiteSpace(request.OptionsJson) ? "{}" : request.OptionsJson;
     }
 

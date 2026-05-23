@@ -18,12 +18,18 @@ public enum ProductFieldType
     Text = 1,
     Number = 2,
     Money = 3,
-    Boolean = 4,
-    Date = 5,
-    Select = 6,
-    MultiSelect = 7,
-    Color = 8,
-    Json = 9
+    TextArea = 4,
+    Boolean = 5,
+    Date = 6,
+    Select = 7,
+    MultiSelect = 8,
+    Checkbox = 9,
+    Radio = 10,
+    Image = 11,
+    File = 12,
+    RichText = 13,
+    Color = 14,
+    Json = 15
 }
 
 public enum PageLayoutStatus
