@@ -128,24 +128,12 @@
             return Array.Empty<string>();
         }
 
-        var matchedUrls = Regex.Matches(raw, @"https?://.*?(?=(?:\s*[,;\n\r]\s*https?://)|$)", RegexOptions.IgnoreCase)
-            .Select(match => match.Value.Trim('"', '\'', ' '))
-            .Where(url => !string.IsNullOrWhiteSpace(url))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        if (matchedUrls.Length > 0)
-        {
-            return matchedUrls;
-        }
-
         if (raw.TrimStart().StartsWith("data:", StringComparison.OrdinalIgnoreCase))
         {
             return [raw.Trim('"', '\'', ' ')];
         }
 
-        return raw
-            .Split([',', '\n', '\r', ';'], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+        return Regex.Split(raw, @"\s*[,;\n\r]+\s*(?=(?:https?://|data:|/))", RegexOptions.IgnoreCase)
             .Select(url => url.Trim('"', '\'', ' '))
             .Where(url => !string.IsNullOrWhiteSpace(url))
             .Distinct(StringComparer.Ordinal)
