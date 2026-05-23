@@ -1,0 +1,139 @@
+@using Platform.Blazor.Rendering
+@using Microsoft.AspNetCore.Components
+@using System.Globalization
+
+@if (Layout.Sections.Count == 0)
+{
+    <div class="alert alert-light border">This page has no published sections.</div>
+}
+else
+{
+    var visibleSections = VisibleSections(Layout.Sections).ToArray();
+    if (visibleSections.Length == 0)
+    {
+        <div class="alert alert-light border">This page has no visible published sections.</div>
+    }
+    else if (UsesFreeform(visibleSections))
+    {
+        <div class="rendered-freeform-page" style="@FreeformStyle(visibleSections)">
+            @foreach (var section in visibleSections)
+            {
+                @RenderSection(section)
+            }
+        </div>
+    }
+    else
+    {
+        @foreach (var section in visibleSections)
+        {
+            @RenderSection(section)
+        }
+    }
+}
+
+@code {
+    [Parameter] public PageLayoutDocument Layout { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private Dictionary<string, object?> BuildParameters(PageSectionDefinition section) => new()
+    {
+        ["Section"] = WithVisibleChildren(section),
+        ["StoreKey"] = StoreKey
+    };
+
+    private RenderFragment RenderSection(PageSectionDefinition section) => @<text>
+        @{
+            var componentType = PageComponentRegistry.Resolve(section.Type);
+            if (componentType is null)
+            {
+                <div class="alert alert-warning">Unsupported component type: @(section.Type)</div>
+            }
+            else
+            {
+                <div class="rendered-page-section" style="@StyleBuilder.FromJson(section.Styles)">
+                    <DynamicComponent Type="componentType" Parameters="BuildParameters(section)" />
+                </div>
+            }
+        }
+    </text>;
+
+    private static IEnumerable<PageSectionDefinition> VisibleSections(IEnumerable<PageSectionDefinition> sections)
+    {
+        return sections
+            .Where(section => !IsHidden(section))
+            .OrderBy(section => section.Order);
+    }
+
+    private static PageSectionDefinition WithVisibleChildren(PageSectionDefinition section)
+    {
+        if (section.Children.Count == 0)
+        {
+            return section;
+        }
+
+        return new PageSectionDefinition
+        {
+            Id = section.Id,
+            Type = section.Type,
+            Order = section.Order,
+            Props = section.Props,
+            Styles = section.Styles,
+            Children = VisibleSections(section.Children)
+                .Select(WithVisibleChildren)
+                .ToList()
+        };
+    }
+
+    private static bool UsesFreeform(IEnumerable<PageSectionDefinition> sections)
+    {
+        return sections.Any(section =>
+            StyleEquals(section, "position", "absolute") ||
+            HasStyle(section, "left") ||
+            HasStyle(section, "top"));
+    }
+
+    private static string FreeformStyle(IEnumerable<PageSectionDefinition> sections)
+    {
+        var height = sections
+            .Select(section => GetPixel(section, "top") + Math.Max(GetPixel(section, "height"), GetPixel(section, "minHeight")))
+            .DefaultIfEmpty(720)
+            .Max();
+        return $"min-height:{Math.Max(720, Math.Ceiling(height + 48)).ToString(CultureInfo.InvariantCulture)}px";
+    }
+
+    private static bool HasStyle(PageSectionDefinition section, string key)
+    {
+        return section.Styles.TryGetPropertyValue(key, out var node) &&
+            node is JsonValue value &&
+            !string.IsNullOrWhiteSpace(value.ToString());
+    }
+
+    private static bool StyleEquals(PageSectionDefinition section, string key, string expected)
+    {
+        return section.Styles.TryGetPropertyValue(key, out var node) &&
+            node is JsonValue value &&
+            value.ToString().Equals(expected, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsHidden(PageSectionDefinition section)
+    {
+        return StyleEquals(section, "visibility", "hidden") ||
+               StyleEquals(section, "display", "none");
+    }
+
+    private static double GetPixel(PageSectionDefinition section, string key)
+    {
+        if (!section.Styles.TryGetPropertyValue(key, out var node) || node is not JsonValue value)
+        {
+            return 0;
+        }
+
+        var raw = value.ToString().Trim();
+        if (raw.EndsWith("px", StringComparison.OrdinalIgnoreCase))
+        {
+            raw = raw[..^2];
+        }
+
+        return double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0;
+    }
+}

@@ -1,0 +1,10 @@
+@using Platform.Blazor.Rendering
+
+<div class="store-spacer" style="height:@Height"></div>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private string Height => JsonProps.GetString(Section.Props, "height", "48px");
+}

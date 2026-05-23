@@ -1,0 +1,105 @@
+@page "/login"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject AuthClient Auth
+@inject NavigationManager Navigation
+
+<PageTitle>Sign in</PageTitle>
+
+<div class="auth-panel">
+    <div class="panel">
+        <h1 class="h4 mb-3">Sign in</h1>
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="alert alert-danger">@error</div>
+        }
+        <EditForm Model="login" OnValidSubmit="SubmitLogin">
+            <DataAnnotationsValidator />
+            <div class="mb-3">
+                <label class="form-label">Email</label>
+                <InputText class="form-control" @bind-Value="login.Email" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Password</label>
+                <InputText type="password" class="form-control" @bind-Value="login.Password" />
+            </div>
+            <button class="btn btn-primary w-100" disabled="@busy">Sign in</button>
+        </EditForm>
+    </div>
+
+    <div class="panel">
+        <h2 class="h5 mb-3">Create account</h2>
+        <EditForm Model="register" OnValidSubmit="SubmitRegister">
+            <div class="mb-3">
+                <label class="form-label">Display name</label>
+                <InputText class="form-control" @bind-Value="register.DisplayName" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Email</label>
+                <InputText class="form-control" @bind-Value="register.Email" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Password</label>
+                <InputText type="password" class="form-control" @bind-Value="register.Password" />
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Role</label>
+                <InputSelect class="form-select" @bind-Value="register.Role">
+                    <option value="@PlatformRoles.Customer">Customer</option>
+                    <option value="@PlatformRoles.StoreOwner">Store owner</option>
+                </InputSelect>
+            </div>
+            <button class="btn btn-outline-primary w-100" disabled="@busy">Create account</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private readonly LoginRequest login = new() { Email = "owner@demo.local", Password = "Password123!" };
+    private readonly RegisterRequest register = new() { Role = PlatformRoles.StoreOwner };
+    private bool busy;
+    private string? error;
+
+    private async Task SubmitLogin()
+    {
+        await Submit(async () => await Auth.LoginAsync(login));
+    }
+
+    private async Task SubmitRegister()
+    {
+        await Submit(async () => await Auth.RegisterAsync(register));
+    }
+
+    private async Task Submit(Func<Task<AuthResponse>> action)
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            var response = await action();
+            Navigation.NavigateTo(GetPostLoginUrl(response), replace: true);
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private static string GetPostLoginUrl(AuthResponse response)
+    {
+        if (response.Roles.Contains(PlatformRoles.PlatformAdmin))
+        {
+            return "/admin";
+        }
+
+        if (response.Roles.Contains(PlatformRoles.StoreOwner) || response.Roles.Contains(PlatformRoles.StoreStaff))
+        {
+            return "/owner";
+        }
+
+        return "/";
+    }
+}

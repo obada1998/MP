@@ -1,0 +1,61 @@
+@page "/store/{StoreKey}/products"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject PlatformApiClient Api
+@inject CartService Cart
+
+<PageTitle>Products</PageTitle>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="container py-4"><div class="alert alert-warning">@error</div></div>
+}
+else if (catalog is null)
+{
+    <div class="container py-4 placeholder-glow"><span class="placeholder col-12 py-5"></span></div>
+}
+else
+{
+    <StorefrontHeader Store="catalog.Store" CartCount="Cart.Count" />
+    <main class="container py-4">
+        <div class="d-flex align-items-center justify-content-between mb-4">
+            <h1 class="h3 m-0">Products</h1>
+            <a class="btn btn-outline-secondary" href="/store/@StoreKey/cart">Cart (@Cart.Count)</a>
+        </div>
+        <div class="store-grid" style="--store-grid-columns:4">
+            @foreach (var product in catalog.Products)
+            {
+                <article class="product-card">
+                    <a href="/store/@StoreKey/products/@product.Slug">
+                        <img src="@(product.PrimaryImageUrl ?? "https://placehold.co/600x450?text=Product")" alt="@product.Name" />
+                    </a>
+                    <div class="product-card-body">
+                        <h3>@product.Name</h3>
+                        <p class="text-muted">@product.BasePrice.ToString("C")</p>
+                        <button class="btn btn-primary btn-sm" @onclick="() => Cart.Add(product)">Add to cart</button>
+                    </div>
+                </article>
+            }
+        </div>
+    </main>
+}
+
+@code {
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+    [SupplyParameterFromQuery] public Guid? CategoryId { get; set; }
+
+    private StorefrontCatalogDto? catalog;
+    private string? error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        try
+        {
+            var suffix = CategoryId.HasValue ? $"?categoryId={CategoryId}" : "";
+            catalog = await Api.GetAsync<StorefrontCatalogDto>($"api/storefront/{StoreKey}/catalog{suffix}");
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+}

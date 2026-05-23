@@ -1,0 +1,143 @@
+@page "/owner/{StoreId:guid}/settings"
+@attribute [ClientAuthorize(Roles = "StoreOwner,StoreStaff,PlatformAdmin")]
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject PlatformApiClient Api
+
+<PageTitle>Settings</PageTitle>
+
+<div class="dashboard-shell">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h1 class="h3 mb-1">Settings</h1>
+            <div class="text-muted">Store identity, tenant settings, and theme values.</div>
+        </div>
+        <a class="btn btn-outline-secondary" href="/owner">Back</a>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="alert alert-warning">@error</div>
+    }
+
+    <div class="row g-3">
+        <div class="col-lg-4">
+            <div class="panel">
+                <h2 class="h5 mb-3">Store</h2>
+                @if (storeForm is not null)
+                {
+                    <EditForm Model="storeForm" OnValidSubmit="SaveStore">
+                        <label class="form-label">Name</label>
+                        <InputText class="form-control mb-3" @bind-Value="storeForm.Name" />
+                        <label class="form-label">Logo URL</label>
+                        <InputText class="form-control mb-3" @bind-Value="storeForm.LogoUrl" />
+                        <label class="form-label">Domain placeholder</label>
+                        <InputText class="form-control mb-3" @bind-Value="storeForm.Domain" />
+                        <label class="form-label">Theme name</label>
+                        <InputText class="form-control mb-3" @bind-Value="storeForm.ThemeName" />
+                        <div class="form-check mb-3">
+                            <InputCheckbox class="form-check-input" @bind-Value="storeForm.IsActive" />
+                            <label class="form-check-label">Active</label>
+                        </div>
+                        <button class="btn btn-primary w-100">Save store</button>
+                    </EditForm>
+                }
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="panel">
+                <h2 class="h5 mb-3">Settings</h2>
+                @if (settings is not null)
+                {
+                    <EditForm Model="settings" OnValidSubmit="SaveSettings">
+                        <label class="form-label">Currency</label>
+                        <InputText class="form-control mb-3" @bind-Value="settings.Currency" />
+                        <label class="form-label">Culture</label>
+                        <InputText class="form-control mb-3" @bind-Value="settings.Culture" />
+                        <label class="form-label">Contact email</label>
+                        <InputText class="form-control mb-3" @bind-Value="settings.ContactEmail" />
+                        <label class="form-label">Settings JSON</label>
+                        <InputTextArea class="form-control font-monospace mb-3" rows="6" @bind-Value="settings.SettingsJson" />
+                        <button class="btn btn-primary w-100">Save settings</button>
+                    </EditForm>
+                }
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="panel">
+                <h2 class="h5 mb-3">Theme</h2>
+                @if (theme is not null)
+                {
+                    <EditForm Model="theme" OnValidSubmit="SaveTheme">
+                        <label class="form-label">Primary</label>
+                        <InputText class="form-control form-control-color mb-3" @bind-Value="theme.PrimaryColor" />
+                        <label class="form-label">Accent</label>
+                        <InputText class="form-control form-control-color mb-3" @bind-Value="theme.AccentColor" />
+                        <label class="form-label">Font family</label>
+                        <InputText class="form-control mb-3" @bind-Value="theme.FontFamily" />
+                        <label class="form-label">Custom CSS</label>
+                        <InputTextArea class="form-control font-monospace mb-3" rows="6" @bind-Value="theme.CustomCss" />
+                        <button class="btn btn-primary w-100">Save theme</button>
+                    </EditForm>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid StoreId { get; set; }
+
+    private UpdateStoreRequest? storeForm;
+    private StoreSettingsDto? settings;
+    private ThemeSettingsDto? theme;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var store = await Api.GetAsync<StoreDto>($"api/stores/{StoreId}");
+            if (store is not null)
+            {
+                storeForm = new UpdateStoreRequest
+                {
+                    Name = store.Name,
+                    LogoUrl = store.LogoUrl,
+                    Domain = store.Domain,
+                    ThemeName = store.ThemeName,
+                    IsActive = store.IsActive
+                };
+            }
+            settings = await Api.GetAsync<StoreSettingsDto>($"api/stores/{StoreId}/settings");
+            theme = await Api.GetAsync<ThemeSettingsDto>($"api/stores/{StoreId}/theme");
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task SaveStore()
+    {
+        if (storeForm is not null)
+        {
+            await Api.PutAsync<UpdateStoreRequest, StoreDto>($"api/stores/{StoreId}", storeForm);
+        }
+    }
+
+    private async Task SaveSettings()
+    {
+        if (settings is not null)
+        {
+            await Api.PutAsync<StoreSettingsDto, StoreSettingsDto>($"api/stores/{StoreId}/settings", settings);
+        }
+    }
+
+    private async Task SaveTheme()
+    {
+        if (theme is not null)
+        {
+            await Api.PutAsync<ThemeSettingsDto, ThemeSettingsDto>($"api/stores/{StoreId}/theme", theme);
+        }
+    }
+}

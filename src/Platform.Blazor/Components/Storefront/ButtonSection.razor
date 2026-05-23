@@ -1,0 +1,22 @@
+@using Platform.Blazor.Rendering
+
+<section class="py-3">
+    <div class="container text-@Align">
+        <a class="btn btn-primary btn-lg store-builder-button"
+           style="--button-bg:@ButtonBackground;--button-color:@ButtonColor;--button-hover-bg:@HoverBackground;--button-radius:@ButtonRadius"
+           href="@StoreUrlBuilder.Resolve(Url, StoreKey)">@Text</a>
+    </div>
+</section>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private string Text => JsonProps.GetString(Section.Props, "text", "Shop now");
+    private string Url => JsonProps.GetString(Section.Props, "url", $"/store/{StoreKey}/products");
+    private string Align => JsonProps.GetString(Section.Props, "align", "start");
+    private string ButtonBackground => JsonProps.GetString(Section.Props, "buttonBackground", "#0f5ea8");
+    private string ButtonColor => JsonProps.GetString(Section.Props, "buttonColor", "#ffffff");
+    private string HoverBackground => JsonProps.GetString(Section.Props, "hoverBackground", "#0b4d89");
+    private string ButtonRadius => JsonProps.GetString(Section.Props, "buttonRadius", "8px");
+}

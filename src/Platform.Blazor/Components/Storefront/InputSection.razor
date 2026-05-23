@@ -1,0 +1,19 @@
+@using Platform.Blazor.Rendering
+
+<div class="mb-3">
+    @if (!string.IsNullOrWhiteSpace(Label))
+    {
+        <label class="form-label">@Label</label>
+    }
+    <input class="form-control" type="@InputType" placeholder="@Placeholder" required="@Required" />
+</div>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private string Label => JsonProps.GetString(Section.Props, "label", "Field label");
+    private string Placeholder => JsonProps.GetString(Section.Props, "placeholder", "");
+    private string InputType => JsonProps.GetString(Section.Props, "inputType", "text");
+    private bool Required => JsonProps.GetBool(Section.Props, "required");
+}

@@ -1,0 +1,178 @@
+@using Platform.Blazor.Rendering
+@inject PlatformApiClient Api
+
+<header class="store-nav-section @NavLayoutClass @NavPositionClass @NavWidthClass @LinksAlignmentClass" style="@NavStyle">
+    <div class="@ContainerClass">
+        <div class="store-nav-inner">
+            <a class="store-nav-brand @LogoPlacementClass" style="@BrandStyle" href="@StoreUrlBuilder.Resolve("/", StoreKey)">
+                @if (ShowLogo && !string.IsNullOrWhiteSpace(LogoUrl))
+                {
+                    <img class="store-nav-logo" src="@LogoUrl" alt="@LogoAlt" />
+                }
+                @if (!HideBrandText)
+                {
+                    <span>@Brand</span>
+                }
+            </a>
+            <nav class="store-nav-links" style="@LinksStyle" aria-label="Template navigation">
+                @foreach (var link in Links)
+                {
+                    <a href="@link.Url">@link.Text</a>
+                }
+            </nav>
+            @if (!string.IsNullOrWhiteSpace(CtaText))
+            {
+                <a class="btn btn-sm btn-primary store-nav-cta" style="@CtaStyle" href="@StoreUrlBuilder.Resolve(CtaUrl, StoreKey)">@CtaText</a>
+            }
+        </div>
+    </div>
+</header>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private StorefrontNavigationDto? navigation;
+    private string Brand => UseStoreName && !string.IsNullOrWhiteSpace(navigation?.Store.Name)
+        ? navigation.Store.Name
+        : JsonProps.GetString(Section.Props, "brand", navigation?.Store.Name ?? "Brand");
+    private IReadOnlyCollection<NavLink> Links => ReadLinks();
+    private string CtaText => JsonProps.GetString(Section.Props, "ctaText");
+    private string CtaUrl => JsonProps.GetString(Section.Props, "ctaUrl", "#");
+    private string CustomLogoUrl => JsonProps.GetString(Section.Props, "logoUrl");
+    private string LogoUrl => !string.IsNullOrWhiteSpace(CustomLogoUrl)
+        ? CustomLogoUrl
+        : navigation?.Store.LogoUrl ?? string.Empty;
+    private string LogoAlt => JsonProps.GetString(Section.Props, "logoAlt", Brand);
+    private string LogoSize => SafeCssLength(JsonProps.GetString(Section.Props, "logoSize", "42px"), "42px");
+    private string NavTop => SafeCssLength(JsonProps.GetString(Section.Props, "navTop", "0px"), "0px");
+    private bool AutoLinks => JsonProps.GetBool(Section.Props, "autoLinks", true);
+    private bool UseStoreName => JsonProps.GetBool(Section.Props, "useStoreName", true);
+    private bool ShowLogo => JsonProps.GetBool(Section.Props, "showLogo", true);
+    private bool HideBrandText => JsonProps.GetBool(Section.Props, "hideBrandText");
+    private string LogoPlacementClass => JsonProps.GetString(Section.Props, "logoPlacement", "beforeName").ToLowerInvariant() switch
+    {
+        "aftername" => "logo-after",
+        "abovename" => "logo-above",
+        _ => "logo-before"
+    };
+    private string NavLayoutClass => ReadClass("navLayout", "spread", ["spread", "left", "center", "right"], "layout");
+    private string NavPositionClass => ReadClass("navPosition", "normal", ["normal", "sticky", "fixed"], "position");
+    private string NavWidthClass => ReadClass("navWidth", "contained", ["contained", "full"], "width");
+    private string LinksAlignmentClass => ReadClass("linksAlignment", "center", ["start", "center", "end"], "links");
+    private string ContainerClass => JsonProps.GetString(Section.Props, "navWidth", "contained").Equals("full", StringComparison.OrdinalIgnoreCase)
+        ? "container-fluid"
+        : "container";
+    private string NavStyle => $"--store-nav-logo-size:{LogoSize};--store-nav-top:{NavTop};";
+    private string BrandStyle => $"order:{PositionOrder("brandPosition", "left")};";
+    private string LinksStyle => $"order:{PositionOrder("linksPosition", "center")};";
+    private string CtaStyle => $"order:{PositionOrder("ctaPosition", "right")};";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if ((AutoLinks || UseStoreName || (ShowLogo && string.IsNullOrWhiteSpace(CustomLogoUrl))) &&
+            !string.IsNullOrWhiteSpace(StoreKey))
+        {
+            try
+            {
+                navigation = await Api.GetAsync<StorefrontNavigationDto>($"api/storefront/{StoreKey}/navigation");
+            }
+            catch
+            {
+                navigation = null;
+            }
+        }
+    }
+
+    private IReadOnlyCollection<NavLink> ReadLinks()
+    {
+        if (AutoLinks && navigation?.Pages.Count > 0)
+        {
+            return navigation.Pages
+                .Select(page => new NavLink(
+                    page.Title,
+                    page.IsHomePage
+                        ? StoreUrlBuilder.Resolve("/", StoreKey)
+                        : StoreUrlBuilder.Resolve(page.Slug, StoreKey)))
+                .ToArray();
+        }
+
+        if (!Section.Props.TryGetPropertyValue("links", out var node) || node is not JsonArray array)
+        {
+            return DefaultLinks();
+        }
+
+        var links = new List<NavLink>();
+        foreach (var item in array)
+        {
+            if (item is JsonValue value && value.TryGetValue<string>(out var label) && !string.IsNullOrWhiteSpace(label))
+            {
+                links.Add(new NavLink(label, StoreUrlBuilder.FromLabel(label, StoreKey)));
+            }
+            else if (item is JsonObject obj)
+            {
+                var text = JsonProps.GetString(obj, "text");
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    links.Add(new NavLink(text, StoreUrlBuilder.Resolve(JsonProps.GetString(obj, "url", text), StoreKey)));
+                }
+            }
+        }
+
+        return links.Count == 0 ? DefaultLinks() : links;
+    }
+
+    private IReadOnlyCollection<NavLink> DefaultLinks()
+    {
+        return
+        [
+            new("Home", StoreUrlBuilder.Resolve("/", StoreKey)),
+            new("Shop", StoreUrlBuilder.Resolve("/products", StoreKey)),
+            new("Cart", StoreUrlBuilder.Resolve("/cart", StoreKey))
+        ];
+    }
+
+    private string ReadClass(string key, string fallback, IReadOnlyCollection<string> allowed, string prefix)
+    {
+        var value = JsonProps.GetString(Section.Props, key, fallback);
+        if (!allowed.Contains(value, StringComparer.OrdinalIgnoreCase))
+        {
+            value = fallback;
+        }
+
+        return $"nav-{prefix}-{value.ToLowerInvariant()}";
+    }
+
+    private int PositionOrder(string key, string fallback)
+    {
+        var value = JsonProps.GetString(Section.Props, key, fallback);
+        return value.ToLowerInvariant() switch
+        {
+            "left" or "start" => 1,
+            "center" => 2,
+            "right" or "end" => 3,
+            _ => fallback.Equals("center", StringComparison.OrdinalIgnoreCase)
+                ? 2
+                : fallback.Equals("right", StringComparison.OrdinalIgnoreCase) || fallback.Equals("end", StringComparison.OrdinalIgnoreCase) ? 3 : 1
+        };
+    }
+
+    private static string SafeCssLength(string value, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return fallback;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed.Length <= 32 &&
+               !trimmed.Contains(';') &&
+               !trimmed.Contains('{') &&
+               !trimmed.Contains('}') &&
+               !trimmed.Contains('<')
+            ? trimmed
+            : fallback;
+    }
+
+    private sealed record NavLink(string Text, string Url);
+}

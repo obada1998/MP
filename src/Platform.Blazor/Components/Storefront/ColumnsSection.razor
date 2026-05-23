@@ -1,0 +1,42 @@
+@using Platform.Blazor.Rendering
+
+<section class="py-4">
+    <div class="container">
+        @if (!string.IsNullOrWhiteSpace(Heading))
+        {
+            <h2 class="mb-3">@Heading</h2>
+        }
+        <div class="store-columns" style="--store-columns:@Columns">
+            @if (Section.Children.Count == 0)
+            {
+                @for (var i = 0; i < Columns; i++)
+                {
+                    <div class="store-column-placeholder"></div>
+                }
+            }
+            else
+            {
+                @foreach (var child in Section.Children.OrderBy(x => x.Order))
+                {
+                    <div class="store-column">
+                        <DynamicPageRenderer Layout="ChildLayout(child)" StoreKey="@StoreKey" />
+                    </div>
+                }
+            }
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private string Heading => JsonProps.GetString(Section.Props, "heading");
+    private int Columns => Math.Clamp(JsonProps.GetInt(Section.Props, "columns", 2), 1, 4);
+
+    private static PageLayoutDocument ChildLayout(PageSectionDefinition child) => new()
+    {
+        PageId = child.Id,
+        Sections = [child]
+    };
+}

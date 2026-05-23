@@ -1,0 +1,350 @@
+@page "/owner/{StoreId:guid}/products"
+@attribute [ClientAuthorize(Roles = "StoreOwner,StoreStaff,PlatformAdmin")]
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using System.Text.Json
+@inject PlatformApiClient Api
+
+<PageTitle>Products</PageTitle>
+
+<div class="dashboard-shell">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h1 class="h3 mb-1">Products</h1>
+            <div class="text-muted">Catalog data is isolated to this store.</div>
+        </div>
+        <a class="btn btn-outline-secondary" href="/owner">Back</a>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="alert alert-warning">@error</div>
+    }
+
+    <div class="row g-3">
+        <div class="col-xl-8">
+            <div class="panel mb-3">
+                <h2 class="h5 mb-3">Product form</h2>
+                <EditForm Model="productForm" OnValidSubmit="SaveProduct">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Name</label>
+                            <InputText class="form-control" @bind-Value="productForm.Name" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Slug</label>
+                            <InputText class="form-control" @bind-Value="productForm.Slug" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">SKU</label>
+                            <InputText class="form-control" @bind-Value="productForm.Sku" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Price</label>
+                            <InputNumber class="form-control" @bind-Value="productForm.BasePrice" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Status</label>
+                            <InputSelect class="form-select" @bind-Value="productForm.Status">
+                                @foreach (var status in Enum.GetValues<ProductStatus>())
+                                {
+                                    <option value="@status">@status</option>
+                                }
+                            </InputSelect>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Primary image URL</label>
+                            <InputText class="form-control" @bind-Value="productForm.PrimaryImageUrl" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Description</label>
+                            <InputTextArea class="form-control" rows="3" @bind-Value="productForm.Description" />
+                        </div>
+                    </div>
+
+                    @if (categories?.Count > 0)
+                    {
+                        <div class="mt-3">
+                            <label class="form-label">Categories</label>
+                            <div class="d-flex flex-wrap gap-3">
+                                @foreach (var category in categories)
+                                {
+                                    <label class="form-check">
+                                        <input class="form-check-input" type="checkbox" checked="@selectedCategories.Contains(category.Id)" @onchange="e => ToggleCategory(category.Id, e)" />
+                                        <span class="form-check-label">@category.Name</span>
+                                    </label>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (fields?.Count > 0)
+                    {
+                        <div class="mt-3">
+                            <h3 class="h6">Custom fields</h3>
+                            <div class="row g-3">
+                                @foreach (var field in fields.OrderBy(x => x.DisplayOrder))
+                                {
+                                    <div class="col-md-6">
+                                        <label class="form-label">@field.Label @(field.IsRequired ? "*" : "")</label>
+                                        @RenderFieldInput(field)
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    <div class="d-flex gap-2 mt-4">
+                        <button class="btn btn-primary" disabled="@busy">Save product</button>
+                        <button type="button" class="btn btn-outline-secondary" @onclick="ResetProductForm">New</button>
+                    </div>
+                </EditForm>
+            </div>
+
+            <div class="panel">
+                <h2 class="h5 mb-3">Products</h2>
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Status</th>
+                            <th>Price</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var product in products ?? [])
+                        {
+                            <tr>
+                                <td>
+                                    <strong>@product.Name</strong><br />
+                                    <code>@product.Slug</code>
+                                </td>
+                                <td><span class="badge text-bg-secondary">@product.Status</span></td>
+                                <td>@product.BasePrice.ToString("C")</td>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => Edit(product)">Edit</button>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => Delete(product.Id)">Delete</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="col-xl-4">
+            <div class="panel">
+                <h2 class="h5 mb-3">Product fields</h2>
+                <EditForm Model="fieldForm" OnValidSubmit="CreateField">
+                    <div class="mb-2">
+                        <label class="form-label">Key</label>
+                        <InputText class="form-control" @bind-Value="fieldForm.Key" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Label</label>
+                        <InputText class="form-control" @bind-Value="fieldForm.Label" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Type</label>
+                        <InputSelect class="form-select" @bind-Value="fieldForm.FieldType">
+                            @foreach (var type in Enum.GetValues<ProductFieldType>())
+                            {
+                                <option value="@type">@type</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="form-check mb-2">
+                        <InputCheckbox class="form-check-input" @bind-Value="fieldForm.IsRequired" />
+                        <label class="form-check-label">Required</label>
+                    </div>
+                    <button class="btn btn-outline-primary w-100">Add field</button>
+                </EditForm>
+                <hr />
+                <div class="list-group list-group-flush">
+                    @foreach (var field in fields ?? [])
+                    {
+                        <div class="list-group-item d-flex justify-content-between align-items-center px-0">
+                            <span>@field.Label <small class="text-muted">(@field.Key)</small></span>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteField(field.Id)">Remove</button>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid StoreId { get; set; }
+
+    private IReadOnlyCollection<ProductDto>? products;
+    private IReadOnlyCollection<CategoryDto>? categories;
+    private IReadOnlyCollection<ProductFieldDefinitionDto>? fields;
+    private readonly UpsertProductRequest productForm = new();
+    private readonly UpsertProductFieldDefinitionRequest fieldForm = new();
+    private readonly HashSet<Guid> selectedCategories = [];
+    private readonly Dictionary<Guid, string> customValues = [];
+    private Guid? editingProductId;
+    private bool busy;
+    private string? error;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        try
+        {
+            products = await Api.GetAsync<IReadOnlyCollection<ProductDto>>($"api/stores/{StoreId}/products") ?? [];
+            categories = await Api.GetAsync<IReadOnlyCollection<CategoryDto>>($"api/stores/{StoreId}/categories") ?? [];
+            fields = await Api.GetAsync<IReadOnlyCollection<ProductFieldDefinitionDto>>($"api/stores/{StoreId}/products/field-definitions") ?? [];
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task SaveProduct()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            productForm.CategoryIds = selectedCategories.ToArray();
+            productForm.CustomFieldValues = new Dictionary<Guid, string>(customValues);
+
+            if (editingProductId.HasValue)
+            {
+                await Api.PutAsync<UpsertProductRequest, ProductDto>($"api/stores/{StoreId}/products/{editingProductId}", productForm);
+            }
+            else
+            {
+                await Api.PostAsync<UpsertProductRequest, ProductDto>($"api/stores/{StoreId}/products", productForm);
+            }
+
+            ResetProductForm();
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private void Edit(ProductDto product)
+    {
+        editingProductId = product.Id;
+        productForm.Name = product.Name;
+        productForm.Slug = product.Slug;
+        productForm.Sku = product.Sku;
+        productForm.Description = product.Description;
+        productForm.BasePrice = product.BasePrice;
+        productForm.Status = product.Status;
+        productForm.PrimaryImageUrl = product.PrimaryImageUrl;
+        selectedCategories.Clear();
+        foreach (var categoryId in product.CategoryIds)
+        {
+            selectedCategories.Add(categoryId);
+        }
+        customValues.Clear();
+        foreach (var value in product.CustomFields)
+        {
+            customValues[value.FieldDefinitionId] = value.ValueJson;
+        }
+    }
+
+    private async Task Delete(Guid productId)
+    {
+        await Api.DeleteAsync($"api/stores/{StoreId}/products/{productId}");
+        await Load();
+    }
+
+    private async Task CreateField()
+    {
+        await Api.PostAsync<UpsertProductFieldDefinitionRequest, ProductFieldDefinitionDto>($"api/stores/{StoreId}/products/field-definitions", fieldForm);
+        fieldForm.Key = string.Empty;
+        fieldForm.Label = string.Empty;
+        await Load();
+    }
+
+    private async Task DeleteField(Guid fieldId)
+    {
+        await Api.DeleteAsync($"api/stores/{StoreId}/products/field-definitions/{fieldId}");
+        await Load();
+    }
+
+    private void ResetProductForm()
+    {
+        editingProductId = null;
+        productForm.Name = string.Empty;
+        productForm.Slug = string.Empty;
+        productForm.Sku = string.Empty;
+        productForm.Description = string.Empty;
+        productForm.BasePrice = 0;
+        productForm.Status = ProductStatus.Draft;
+        productForm.PrimaryImageUrl = string.Empty;
+        selectedCategories.Clear();
+        customValues.Clear();
+    }
+
+    private void ToggleCategory(Guid categoryId, ChangeEventArgs args)
+    {
+        if (args.Value is true)
+        {
+            selectedCategories.Add(categoryId);
+        }
+        else
+        {
+            selectedCategories.Remove(categoryId);
+        }
+    }
+
+    private RenderFragment RenderFieldInput(ProductFieldDefinitionDto field) => builder =>
+    {
+        var sequence = 0;
+        var value = GetFieldDisplayValue(field.Id);
+        var inputType = field.FieldType is ProductFieldType.Number or ProductFieldType.Money ? "number"
+            : field.FieldType == ProductFieldType.Date ? "date"
+            : field.FieldType == ProductFieldType.Color ? "color"
+            : "text";
+
+        builder.OpenElement(sequence++, "input");
+        builder.AddAttribute(sequence++, "class", "form-control");
+        builder.AddAttribute(sequence++, "type", inputType);
+        builder.AddAttribute(sequence++, "value", value);
+        builder.AddAttribute(sequence++, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, args => SetFieldValue(field, args.Value?.ToString() ?? string.Empty)));
+        builder.CloseElement();
+    };
+
+    private string GetFieldDisplayValue(Guid fieldId)
+    {
+        if (!customValues.TryGetValue(fieldId, out var json) || string.IsNullOrWhiteSpace(json))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.ValueKind == JsonValueKind.String ? document.RootElement.GetString() ?? string.Empty : document.RootElement.ToString();
+        }
+        catch
+        {
+            return json;
+        }
+    }
+
+    private void SetFieldValue(ProductFieldDefinitionDto field, string value)
+    {
+        customValues[field.Id] = field.FieldType switch
+        {
+            ProductFieldType.Number or ProductFieldType.Money => decimal.TryParse(value, out var number) ? number.ToString(System.Globalization.CultureInfo.InvariantCulture) : "0",
+            ProductFieldType.Boolean => bool.TryParse(value, out var boolean) && boolean ? "true" : "false",
+            _ => JsonSerializer.Serialize(value)
+        };
+    }
+}

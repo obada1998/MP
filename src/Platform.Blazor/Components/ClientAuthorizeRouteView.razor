@@ -1,0 +1,123 @@
+@using System.Security.Claims
+@using Platform.Blazor.Security
+@implements IDisposable
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+@if (access is null)
+{
+    <LayoutView Layout="@DefaultLayout">
+        <div class="dashboard-shell">
+            <div class="panel auth-required-panel">
+                <div class="placeholder-glow">
+                    <span class="placeholder col-8 py-3"></span>
+                    <span class="placeholder col-12 py-2 mt-3"></span>
+                </div>
+            </div>
+        </div>
+    </LayoutView>
+}
+else if (access.Allowed)
+{
+    <RouteView RouteData="@RouteData" DefaultLayout="@DefaultLayout" />
+}
+else
+{
+    <LayoutView Layout="@DefaultLayout">
+        <div class="dashboard-shell">
+            <div class="panel auth-required-panel">
+                @if (access.Authenticated)
+                {
+                    <h1 class="h4 mb-2">Access denied</h1>
+                    <p class="text-muted mb-3">Your account does not have permission to access this area.</p>
+                    <a class="btn btn-primary" href="/">Go home</a>
+                }
+                else
+                {
+                    <h1 class="h4 mb-2">Sign in required</h1>
+                    <p class="text-muted mb-3">Use an account with access to this area.</p>
+                    <a class="btn btn-primary" href="/login">Sign in</a>
+                }
+            </div>
+        </div>
+    </LayoutView>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public RouteData RouteData { get; set; } = default!;
+
+    [Parameter]
+    public Type DefaultLayout { get; set; } = default!;
+
+    private AccessResult? access;
+
+    protected override void OnInitialized()
+    {
+        AuthenticationStateProvider.AuthenticationStateChanged += OnAuthenticationStateChanged;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        access = null;
+        access = await EvaluateAccessAsync();
+    }
+
+    private async void OnAuthenticationStateChanged(Task<AuthenticationState> authenticationStateTask)
+    {
+        try
+        {
+            access = await EvaluateAccessAsync(authenticationStateTask);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            access = new AccessResult(Allowed: false, Authenticated: false);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task<AccessResult> EvaluateAccessAsync(Task<AuthenticationState>? existingStateTask = null)
+    {
+        var requirements = RouteData.PageType
+            .GetCustomAttributes(typeof(ClientAuthorizeAttribute), inherit: true)
+            .OfType<ClientAuthorizeAttribute>()
+            .ToArray();
+
+        if (requirements.Length == 0)
+        {
+            return new AccessResult(Allowed: true, Authenticated: true);
+        }
+
+        var authenticationState = existingStateTask is null
+            ? await AuthenticationStateProvider.GetAuthenticationStateAsync()
+            : await existingStateTask;
+
+        var user = authenticationState.User;
+        var authenticated = user.Identity?.IsAuthenticated == true;
+        if (!authenticated)
+        {
+            return new AccessResult(Allowed: false, Authenticated: false);
+        }
+
+        var allowed = requirements.All(requirement => IsAllowed(user, requirement));
+        return new AccessResult(allowed, authenticated);
+    }
+
+    private static bool IsAllowed(ClaimsPrincipal user, ClientAuthorizeAttribute requirement)
+    {
+        if (string.IsNullOrWhiteSpace(requirement.Roles))
+        {
+            return true;
+        }
+
+        var roles = requirement.Roles.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return roles.Length == 0 || roles.Any(user.IsInRole);
+    }
+
+    public void Dispose()
+    {
+        AuthenticationStateProvider.AuthenticationStateChanged -= OnAuthenticationStateChanged;
+    }
+
+    private sealed record AccessResult(bool Allowed, bool Authenticated);
+}

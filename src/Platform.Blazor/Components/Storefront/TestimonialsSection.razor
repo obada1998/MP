@@ -1,0 +1,31 @@
+@using Platform.Blazor.Rendering
+
+<section class="store-testimonials-section">
+    <div class="container">
+        <div class="store-section-heading">
+            <h2>@Heading</h2>
+        </div>
+        <div class="store-testimonial-grid">
+            @foreach (var item in Items)
+            {
+                <figure class="store-testimonial-card">
+                    <blockquote>@JsonProps.GetString(item, "quote", "Customer quote goes here.")</blockquote>
+                    <figcaption>
+                        <strong>@JsonProps.GetString(item, "author", "Customer")</strong>
+                        <span>@JsonProps.GetString(item, "role", "Role")</span>
+                    </figcaption>
+                </figure>
+            }
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private string Heading => JsonProps.GetString(Section.Props, "heading", "Testimonials");
+    private IReadOnlyCollection<JsonObject> Items => JsonProps.GetObjectArray(Section.Props, "items").Count > 0
+        ? JsonProps.GetObjectArray(Section.Props, "items")
+        : [new JsonObject { ["quote"] = "Customer quote goes here.", ["author"] = "Customer", ["role"] = "Role" }];
+}

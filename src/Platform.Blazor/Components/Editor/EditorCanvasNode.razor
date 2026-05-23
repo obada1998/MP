@@ -1,0 +1,332 @@
+@namespace Platform.Blazor.Components.Editor
+@using Platform.Blazor.Editor
+@using Platform.Blazor.Rendering
+
+<article class="editor-node @(IsSelected ? "selected" : "") @(CanHaveChildren ? "can-contain" : "") @(Box.IsLocked ? "locked" : "") @(Box.IsVisible ? "" : "is-hidden")"
+         style="@NodeStyle"
+         @onclick:stopPropagation="true"
+         @onclick="() => SelectRequested.InvokeAsync(Section.Id)">
+    @if (!Box.IsVisible)
+    {
+        <span class="editor-node-state-badge editor-node-state-badge-floating">Hidden</span>
+    }
+
+    <div class="editor-node-preview"
+         @onpointerdown="BeginMove"
+         @onpointerdown:stopPropagation="true"
+         @onpointerdown:preventDefault="true"
+         @ondblclick="BeginInlineEdit"
+         @ondblclick:stopPropagation="true">
+        <div class="editor-live-preview" style="@StyleBuilder.FromJson(Section.Styles, includeLayout: false)">
+            @RenderPreview()
+        </div>
+        @if (IsSelected && isInlineEditing && IsInlineEditable)
+        {
+            <div class="editor-inline-text-editor"
+                 @onpointerdown:stopPropagation="true"
+                 @onclick:stopPropagation="true"
+                 @onkeydown:stopPropagation="true">
+                @foreach (var field in InlineFields)
+                {
+                    <label>
+                        <span>@field.Label</span>
+                        @if (field.Multiline)
+                        {
+                            <textarea value="@JsonProps.GetString(Section.Props, field.Key, field.Fallback)"
+                                      @oninput="args => InlineEditRequested.InvokeAsync(new EditorInlineEditRequest(Section.Id, field.Key, args.Value?.ToString() ?? string.Empty))"></textarea>
+                        }
+                        else
+                        {
+                            <input value="@JsonProps.GetString(Section.Props, field.Key, field.Fallback)"
+                                   @oninput="args => InlineEditRequested.InvokeAsync(new EditorInlineEditRequest(Section.Id, field.Key, args.Value?.ToString() ?? string.Empty))" />
+                        }
+                    </label>
+                }
+                <button type="button" @onclick="EndInlineEdit">Done</button>
+            </div>
+        }
+    </div>
+
+    @if (IsSelected)
+    {
+        <div class="editor-node-quick-actions"
+             @onpointerdown:stopPropagation="true"
+             @onclick:stopPropagation="true">
+            <button type="button" title="Duplicate" @onclick="() => DuplicateRequested.InvokeAsync(Section.Id)">Duplicate</button>
+            <button type="button" title="Hide or show" @onclick="() => ToggleVisibilityRequested.InvokeAsync(Section.Id)">@(Box.IsVisible ? "Hide" : "Show")</button>
+            <button type="button" title="Lock or unlock" @onclick="() => ToggleLockRequested.InvokeAsync(Section.Id)">@(Box.IsLocked ? "Unlock" : "Lock")</button>
+            <button type="button" title="Bring forward" disabled="@Box.IsLocked" @onclick="() => ZIndexRequested.InvokeAsync(new EditorZIndexRequest(Section.Id, EditorZIndexChange.Forward))">Forward</button>
+            <button type="button" title="Send backward" disabled="@Box.IsLocked" @onclick="() => ZIndexRequested.InvokeAsync(new EditorZIndexRequest(Section.Id, EditorZIndexChange.Backward))">Back</button>
+            <button type="button" title="Bring to front" disabled="@Box.IsLocked" @onclick="() => ZIndexRequested.InvokeAsync(new EditorZIndexRequest(Section.Id, EditorZIndexChange.Front))">Top</button>
+            <button type="button" title="Delete" disabled="@Box.IsLocked" @onclick="() => DeleteRequested.InvokeAsync(Section.Id)">Delete</button>
+        </div>
+    }
+
+    @if (IsSelected && !Box.IsLocked)
+    {
+        @foreach (var handle in EditorGeometry.ResizeHandles)
+        {
+            <button type="button"
+                    class="editor-resize-handle @handle"
+                    title="Resize @handle"
+                    aria-label="Resize @Definition.Name @handle"
+                    @onpointerdown="args => BeginResize(handle, args)"
+                    @onpointerdown:stopPropagation="true"
+                    @onpointerdown:preventDefault="true"
+                    @onclick:stopPropagation="true"></button>
+        }
+    }
+
+    @if (CanHaveChildren)
+    {
+        <div class="editor-child-canvas" style="min-height:@EditorGeometry.FormatPixel(ChildCanvasHeight)">
+            @DropZone(new EditorDropTarget(Section.Id, 0))
+            @if (Section.Children.Count == 0)
+            {
+                <div class="editor-empty-child-zone">Drop elements here</div>
+            }
+            @for (var i = 0; i < Section.Children.Count; i++)
+            {
+                var childIndex = i;
+                var child = Section.Children[childIndex];
+                var childBox = LiveBoxes.TryGetValue(child.Id, out var liveChildBox) ? liveChildBox : EditorGeometry.GetBox(child, childIndex, Depth + 1);
+                if (ShowHiddenElements || SelectedElementId == child.Id || childBox.IsVisible)
+                {
+                    <EditorCanvasNode Section="child"
+                                      ParentId="@Section.Id"
+                                      Index="childIndex"
+                                      Depth="@(Depth + 1)"
+                                      SelectedElementId="@SelectedElementId"
+                                      ActiveDropTarget="@ActiveDropTarget"
+                                      LiveBoxes="@LiveBoxes"
+                                      StoreKey="@StoreKey"
+                                      ShowHiddenElements="@ShowHiddenElements"
+                                      SelectRequested="SelectRequested"
+                                      InteractionStarted="InteractionStarted"
+                                      DropRequested="DropRequested"
+                                      DropTargetChanged="DropTargetChanged"
+                                      DuplicateRequested="DuplicateRequested"
+                                      DeleteRequested="DeleteRequested"
+                                      ToggleVisibilityRequested="ToggleVisibilityRequested"
+                                      ToggleLockRequested="ToggleLockRequested"
+                                      ZIndexRequested="ZIndexRequested"
+                                      InlineEditRequested="InlineEditRequested"
+                                      MoveRequested="MoveRequested" />
+                }
+                @DropZone(new EditorDropTarget(Section.Id, childIndex + 1))
+            }
+        </div>
+    }
+</article>
+
+@code {
+    [Parameter, EditorRequired] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string? ParentId { get; set; }
+    [Parameter] public int Index { get; set; }
+    [Parameter] public int Depth { get; set; }
+    [Parameter] public string? SelectedElementId { get; set; }
+    [Parameter] public EditorDropTarget? ActiveDropTarget { get; set; }
+    [Parameter] public IReadOnlyDictionary<string, EditorElementBox> LiveBoxes { get; set; } = new Dictionary<string, EditorElementBox>();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+    [Parameter] public bool ShowHiddenElements { get; set; }
+    [Parameter] public EventCallback<string> SelectRequested { get; set; }
+    [Parameter] public EventCallback<EditorInteractionRequest> InteractionStarted { get; set; }
+    [Parameter] public EventCallback<EditorDropTarget> DropRequested { get; set; }
+    [Parameter] public EventCallback<EditorDropTarget?> DropTargetChanged { get; set; }
+    [Parameter] public EventCallback<string> DuplicateRequested { get; set; }
+    [Parameter] public EventCallback<string> DeleteRequested { get; set; }
+    [Parameter] public EventCallback<string> ToggleVisibilityRequested { get; set; }
+    [Parameter] public EventCallback<string> ToggleLockRequested { get; set; }
+    [Parameter] public EventCallback<EditorZIndexRequest> ZIndexRequested { get; set; }
+    [Parameter] public EventCallback<EditorInlineEditRequest> InlineEditRequested { get; set; }
+    [Parameter] public EventCallback<EditorMoveRequest> MoveRequested { get; set; }
+
+    private bool isInlineEditing;
+    private EditorComponentDefinition Definition => EditorComponentCatalog.Get(Section.Type);
+    private bool IsSelected => SelectedElementId == Section.Id;
+    private bool CanHaveChildren => EditorComponentCatalog.CanContainChildren(Section.Type);
+    private Type? ComponentType => PageComponentRegistry.Resolve(Section.Type);
+    private EditorElementBox Box => LiveBoxes.TryGetValue(Section.Id, out var box) ? box : EditorGeometry.GetBox(Section, Index, Depth);
+    private string NodeStyle => string.Join("",
+        $"--editor-depth:{Depth};",
+        $"left:{EditorGeometry.FormatPixel(Box.X)};",
+        $"top:{EditorGeometry.FormatPixel(Box.Y)};",
+        $"width:{EditorGeometry.FormatPixel(Box.Width)};",
+        $"height:{EditorGeometry.FormatPixel(Box.Height)};",
+        $"z-index:{Box.ZIndex};");
+    private double ChildCanvasHeight => Section.Children.Count == 0
+        ? 180
+        : Section.Children.Select((child, index) =>
+            (LiveBoxes.TryGetValue(child.Id, out var live) ? live : EditorGeometry.GetBox(child, index, Depth + 1)).Y +
+            (LiveBoxes.TryGetValue(child.Id, out var liveAgain) ? liveAgain : EditorGeometry.GetBox(child, index, Depth + 1)).Height +
+            32).DefaultIfEmpty(180).Max();
+    private bool IsInlineEditable => InlineFields.Count > 0;
+    private IReadOnlyCollection<InlineTextField> InlineFields => Section.Type switch
+    {
+        "text" => [new("heading", "Heading", "Text heading", false), new("text", "Text", "Text content", true)],
+        "button" => [new("text", "Button", "Shop now", false)],
+        "hero" => [new("title", "Title", "Hero title", false), new("subtitle", "Subtitle", "Hero subtitle", true)],
+        "banner" => [new("title", "Title", "Banner title", false), new("subtitle", "Subtitle", "Banner subtitle", true)],
+        _ => []
+    };
+
+    protected override void OnParametersSet()
+    {
+        if (!IsSelected)
+        {
+            isInlineEditing = false;
+        }
+    }
+
+    private RenderFragment DropZone(EditorDropTarget target) => @<div class="editor-drop-zone @(IsActiveDrop(target) ? "active" : "")"
+        @ondragenter="() => DropTargetChanged.InvokeAsync(target)"
+        @ondragover:preventDefault="true"
+        @ondrop:stopPropagation="true"
+        @ondrop="() => DropRequested.InvokeAsync(target)">
+    </div>;
+
+    private bool IsActiveDrop(EditorDropTarget target)
+    {
+        return ActiveDropTarget is not null &&
+               ActiveDropTarget.ParentId == target.ParentId &&
+               ActiveDropTarget.Index == target.Index;
+    }
+
+    private async Task BeginMove(PointerEventArgs args)
+    {
+        await SelectRequested.InvokeAsync(Section.Id);
+        if (Box.IsLocked)
+        {
+            return;
+        }
+
+        await InteractionStarted.InvokeAsync(new EditorInteractionRequest(
+            Section.Id,
+            EditorInteractionKind.Move,
+            null,
+            args.ClientX,
+            args.ClientY,
+            args.PointerId,
+            false));
+    }
+
+    private async Task BeginResize(string handle, PointerEventArgs args)
+    {
+        await SelectRequested.InvokeAsync(Section.Id);
+        await InteractionStarted.InvokeAsync(new EditorInteractionRequest(
+            Section.Id,
+            EditorInteractionKind.Resize,
+            handle,
+            args.ClientX,
+            args.ClientY,
+            args.PointerId,
+            args.ShiftKey));
+    }
+
+    private void BeginInlineEdit()
+    {
+        if (IsInlineEditable && !Box.IsLocked)
+        {
+            isInlineEditing = true;
+        }
+    }
+
+    private void EndInlineEdit()
+    {
+        isInlineEditing = false;
+    }
+
+    private Dictionary<string, object?> ComponentParameters => new()
+    {
+        ["Section"] = Section,
+        ["StoreKey"] = StoreKey
+    };
+
+    private RenderFragment RenderPreview()
+    {
+        if (ComponentType is not null && !CanHaveChildren)
+        {
+            return @<DynamicComponent Type="ComponentType" Parameters="ComponentParameters" />;
+        }
+
+        return RenderFallbackPreview();
+    }
+
+    private RenderFragment RenderFallbackPreview() => Section.Type switch
+    {
+        "hero" => @<div class="editor-preview-hero">
+            <div>
+                <strong>@JsonProps.GetString(Section.Props, "title", "Hero title")</strong>
+                <span>@JsonProps.GetString(Section.Props, "subtitle", "Hero subtitle")</span>
+            </div>
+        </div>,
+        "text" => @<div class="editor-preview-text">
+            <strong>@JsonProps.GetString(Section.Props, "heading", "Text heading")</strong>
+            <p>@JsonProps.GetString(Section.Props, "text", "Text content")</p>
+        </div>,
+        "image" => @<figure class="editor-preview-image">
+            <img src="@JsonProps.GetString(Section.Props, "imageUrl", "https://placehold.co/900x420?text=Image")" alt="" />
+            <figcaption>@JsonProps.GetString(Section.Props, "caption", "Image")</figcaption>
+        </figure>,
+        "logo" => @<div class="editor-preview-logo">
+            <span>Logo</span>
+        </div>,
+        "button" => @<div class="editor-preview-button">
+            <span>@JsonProps.GetString(Section.Props, "text", "Button")</span>
+        </div>,
+        "banner" => @<div class="editor-preview-banner">
+            <strong>@JsonProps.GetString(Section.Props, "title", "Banner title")</strong>
+            <span>@JsonProps.GetString(Section.Props, "subtitle", "Banner subtitle")</span>
+        </div>,
+        "navBar" => @<div class="editor-preview-nav">
+            <strong>@JsonProps.GetString(Section.Props, "brand", "Brand")</strong>
+            <span>@string.Join(" / ", JsonProps.GetStringArray(Section.Props, "links"))</span>
+        </div>,
+        "featureGrid" => @<div class="editor-preview-grid">
+            <strong>@JsonProps.GetString(Section.Props, "heading", "Features")</strong>
+            <div><span></span><span></span><span></span></div>
+        </div>,
+        "testimonials" => @<div class="editor-preview-testimonials">
+            <strong>@JsonProps.GetString(Section.Props, "heading", "Testimonials")</strong>
+            <span>Quote cards</span>
+        </div>,
+        "pricing" => @<div class="editor-preview-grid">
+            <strong>@JsonProps.GetString(Section.Props, "heading", "Pricing")</strong>
+            <div><span></span><span></span><span></span></div>
+        </div>,
+        "footer" => @<div class="editor-preview-footer">
+            <strong>@JsonProps.GetString(Section.Props, "brand", "Brand")</strong>
+            <span>@JsonProps.GetString(Section.Props, "text", "Footer text")</span>
+        </div>,
+        "productGrid" or "featuredProducts" => @<div class="editor-preview-grid">
+            <strong>@JsonProps.GetString(Section.Props, "heading", Definition.Name)</strong>
+            <div><span></span><span></span><span></span><span></span></div>
+        </div>,
+        "categoryGrid" => @<div class="editor-preview-grid">
+            <strong>@JsonProps.GetString(Section.Props, "heading", "Categories")</strong>
+            <div><span></span><span></span><span></span></div>
+        </div>,
+        "spacer" => @<div class="editor-preview-spacer">Spacer @JsonProps.GetString(Section.Props, "height", "48px")</div>,
+        "input" => @<div class="editor-preview-input">
+            <label>@JsonProps.GetString(Section.Props, "label", "Field label")</label>
+            <span>@JsonProps.GetString(Section.Props, "placeholder", "Placeholder")</span>
+        </div>,
+        "form" => @<div class="editor-preview-form">
+            <strong>@JsonProps.GetString(Section.Props, "title", "Form")</strong>
+            <span>@JsonProps.GetString(Section.Props, "buttonText", "Submit")</span>
+        </div>,
+        "columns" => @<div class="editor-preview-columns">
+            @for (var i = 0; i < Math.Clamp(JsonProps.GetInt(Section.Props, "columns", 2), 1, 4); i++)
+            {
+                <span></span>
+            }
+        </div>,
+        "container" => @<div class="editor-preview-container">
+            <strong>@JsonProps.GetString(Section.Props, "title", "Container")</strong>
+        </div>,
+        "customHtml" => @<div class="editor-preview-code">HTML block</div>,
+        _ => @<div class="editor-preview-generic">@Section.Type</div>
+    };
+
+    private sealed record InlineTextField(string Key, string Label, string Fallback, bool Multiline);
+}

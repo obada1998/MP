@@ -1,0 +1,44 @@
+@page "/store/{StoreKey}/pages/{Slug}"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject PlatformApiClient Api
+
+<PageTitle>@(page?.Page.Title ?? "Page")</PageTitle>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="container py-4"><div class="alert alert-warning">@error</div></div>
+}
+else if (page is null)
+{
+    <div class="container py-4 placeholder-glow"><span class="placeholder col-12 py-5"></span></div>
+}
+else
+{
+    @if (!HasCustomNavigation)
+    {
+        <StorefrontHeader Store="page.Store" CartCount="Cart.Count" />
+    }
+    <DynamicPageRenderer Layout="page.Layout" StoreKey="@StoreKey" />
+}
+
+@code {
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+    [Parameter] public string Slug { get; set; } = string.Empty;
+    [Inject] public CartService Cart { get; set; } = null!;
+
+    private StorefrontPageDto? page;
+    private string? error;
+    private bool HasCustomNavigation => page?.Layout.Sections.Any(section => section.Type.Equals("navBar", StringComparison.OrdinalIgnoreCase)) == true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        try
+        {
+            page = await Api.GetAsync<StorefrontPageDto>($"api/storefront/{StoreKey}/pages/{Slug}");
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+}

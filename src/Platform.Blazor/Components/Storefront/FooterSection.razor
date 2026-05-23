@@ -1,0 +1,27 @@
+@using Platform.Blazor.Rendering
+
+<footer class="store-footer-section">
+    <div class="container">
+        <div class="store-footer-inner">
+            <div>
+                <strong>@Brand</strong>
+                <p>@Text</p>
+            </div>
+            <nav aria-label="Footer navigation">
+                @foreach (var link in Links)
+                {
+                    <a href="@StoreUrlBuilder.FromLabel(link, StoreKey)">@link</a>
+                }
+            </nav>
+        </div>
+    </div>
+</footer>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private string Brand => JsonProps.GetString(Section.Props, "brand", "Brand");
+    private string Text => JsonProps.GetString(Section.Props, "text", "Footer text.");
+    private IReadOnlyCollection<string> Links => JsonProps.GetStringArray(Section.Props, "links");
+}

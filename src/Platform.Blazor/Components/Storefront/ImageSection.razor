@@ -1,0 +1,31 @@
+@using Platform.Blazor.Rendering
+
+<section class="storefront-image-section">
+    <figure class="m-0 storefront-image-figure">
+        <img src="@ImageUrl" alt="@AltText" class="storefront-image" style="object-fit:@ObjectFit" />
+        @if (!string.IsNullOrWhiteSpace(OverlayText))
+        {
+            <div class="storefront-image-overlay @OverlayPosition" style="color:@OverlayColor;background:@OverlayBackground">
+                @OverlayText
+            </div>
+        }
+        @if (!string.IsNullOrWhiteSpace(Caption))
+        {
+            <figcaption class="storefront-image-caption">@Caption</figcaption>
+        }
+    </figure>
+</section>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private string ImageUrl => JsonProps.GetString(Section.Props, "imageUrl", "https://placehold.co/1400x700?text=Image");
+    private string AltText => JsonProps.GetString(Section.Props, "altText", "");
+    private string Caption => JsonProps.GetString(Section.Props, "caption", "");
+    private string OverlayText => JsonProps.GetString(Section.Props, "overlayText", "");
+    private string OverlayPosition => JsonProps.GetString(Section.Props, "overlayPosition", "center");
+    private string OverlayColor => JsonProps.GetString(Section.Props, "overlayColor", "#ffffff");
+    private string OverlayBackground => JsonProps.GetString(Section.Props, "overlayBackground", "rgba(15,23,42,.45)");
+    private string ObjectFit => JsonProps.GetString(Section.Props, "objectFit", JsonProps.GetString(Section.Styles, "objectFit", "cover"));
+}

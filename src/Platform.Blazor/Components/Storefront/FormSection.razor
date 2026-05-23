@@ -1,0 +1,40 @@
+@using Platform.Blazor.Rendering
+
+<section class="py-4">
+    <div class="container">
+        <form class="store-form" @onsubmit:preventDefault="true">
+            @if (!string.IsNullOrWhiteSpace(Title))
+            {
+                <h2 class="h4 mb-3">@Title</h2>
+            }
+            @if (Section.Children.Count == 0)
+            {
+                <InputSection Section="DefaultInput" StoreKey="@StoreKey" />
+            }
+            else
+            {
+                <DynamicPageRenderer Layout="ChildLayout" StoreKey="@StoreKey" />
+            }
+            <button type="submit" class="btn btn-primary">@ButtonText</button>
+        </form>
+    </div>
+</section>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private string Title => JsonProps.GetString(Section.Props, "title", "Contact us");
+    private string ButtonText => JsonProps.GetString(Section.Props, "buttonText", "Submit");
+    private PageLayoutDocument ChildLayout => new() { PageId = $"{Section.Id}-children", Sections = Section.Children };
+    private PageSectionDefinition DefaultInput => new()
+    {
+        Type = "input",
+        Props =
+        {
+            ["label"] = "Email",
+            ["placeholder"] = "you@example.com",
+            ["inputType"] = "email"
+        }
+    };
+}

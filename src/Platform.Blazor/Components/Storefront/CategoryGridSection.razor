@@ -1,0 +1,38 @@
+@using Platform.Blazor.Rendering
+@inject PlatformApiClient Api
+
+<section class="py-4">
+    <div class="container">
+        <h2 class="h4 mb-3">@Heading</h2>
+        @if (categories is null)
+        {
+            <div class="placeholder-glow"><span class="placeholder col-12 py-5"></span></div>
+        }
+        else
+        {
+            <div class="store-grid" style="--store-grid-columns:@Columns">
+                @foreach (var category in categories)
+                {
+                    <a class="category-card" href="/store/@StoreKey/products?categoryId=@category.Id">
+                        <span>@category.Name</span>
+                        <small>@category.ProductCount products</small>
+                    </a>
+                }
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private IReadOnlyCollection<CategoryDto>? categories;
+    private string Heading => JsonProps.GetString(Section.Props, "heading", "Categories");
+    private int Columns => Math.Clamp(JsonProps.GetInt(Section.Props, "columns", 4), 1, 6);
+
+    protected override async Task OnInitializedAsync()
+    {
+        categories = await Api.GetAsync<IReadOnlyCollection<CategoryDto>>($"api/storefront/{StoreKey}/categories") ?? [];
+    }
+}

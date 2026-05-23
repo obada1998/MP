@@ -1,0 +1,26 @@
+@using Platform.Blazor.Rendering
+
+<section class="py-4">
+    <div class="container">
+        <div class="store-banner">
+            <div>
+                <h2>@Title</h2>
+                <p>@Subtitle</p>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(ButtonText))
+            {
+                <a class="btn btn-light" href="@StoreUrlBuilder.Resolve(ButtonUrl, StoreKey)">@ButtonText</a>
+            }
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private string Title => JsonProps.GetString(Section.Props, "title", "Promotion");
+    private string Subtitle => JsonProps.GetString(Section.Props, "subtitle", "");
+    private string ButtonText => JsonProps.GetString(Section.Props, "buttonText", "");
+    private string ButtonUrl => JsonProps.GetString(Section.Props, "buttonUrl", $"/store/{StoreKey}/products");
+}

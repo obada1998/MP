@@ -1,0 +1,20 @@
+<header class="storefront-header">
+    <div class="container d-flex align-items-center justify-content-between">
+        <a class="storefront-brand" href="/store/@Store.Slug">
+            @if (!string.IsNullOrWhiteSpace(Store.LogoUrl))
+            {
+                <img src="@Store.LogoUrl" alt="" />
+            }
+            <span>@Store.Name</span>
+        </a>
+        <nav class="d-flex gap-3 align-items-center">
+            <a href="/store/@Store.Slug/products">Products</a>
+            <a href="/store/@Store.Slug/cart">Cart (@CartCount)</a>
+        </nav>
+    </div>
+</header>
+
+@code {
+    [Parameter] public StoreDto Store { get; set; } = new();
+    [Parameter] public int CartCount { get; set; }
+}

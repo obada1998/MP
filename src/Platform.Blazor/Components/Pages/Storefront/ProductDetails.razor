@@ -1,0 +1,79 @@
+@page "/store/{StoreKey}/products/{Slug}"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using System.Text.Json
+@inject PlatformApiClient Api
+@inject CartService Cart
+
+<PageTitle>@(product?.Name ?? "Product")</PageTitle>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="container py-4"><div class="alert alert-warning">@error</div></div>
+}
+else if (product is null)
+{
+    <div class="container py-4 placeholder-glow"><span class="placeholder col-12 py-5"></span></div>
+}
+else
+{
+    <main class="container py-4">
+        <a class="btn btn-link px-0" href="/store/@StoreKey/products">Back to products</a>
+        <div class="row g-4">
+            <div class="col-lg-6">
+                <img class="img-fluid rounded-2 product-detail-image" src="@(product.PrimaryImageUrl ?? "https://placehold.co/900x700?text=Product")" alt="@product.Name" />
+            </div>
+            <div class="col-lg-6">
+                <h1 class="h3">@product.Name</h1>
+                <div class="h4 text-primary">@product.BasePrice.ToString("C")</div>
+                <p class="text-muted">@product.Description</p>
+                @if (product.CustomFields.Count > 0)
+                {
+                    <dl class="row">
+                        @foreach (var field in product.CustomFields)
+                        {
+                            <dt class="col-sm-4">@field.Label</dt>
+                            <dd class="col-sm-8">@DisplayJson(field.ValueJson)</dd>
+                        }
+                    </dl>
+                }
+                <button class="btn btn-primary btn-lg" @onclick="() => Cart.Add(product)">Add to cart</button>
+                <a class="btn btn-outline-secondary btn-lg ms-2" href="/store/@StoreKey/cart">Cart (@Cart.Count)</a>
+            </div>
+        </div>
+    </main>
+}
+
+@code {
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+    [Parameter] public string Slug { get; set; } = string.Empty;
+
+    private ProductDto? product;
+    private string? error;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        try
+        {
+            product = await Api.GetAsync<ProductDto>($"api/storefront/{StoreKey}/products/{Slug}");
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private static string DisplayJson(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.ValueKind == JsonValueKind.String
+                ? document.RootElement.GetString() ?? string.Empty
+                : document.RootElement.ToString();
+        }
+        catch
+        {
+            return json;
+        }
+    }
+}

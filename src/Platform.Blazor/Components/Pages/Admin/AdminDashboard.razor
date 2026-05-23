@@ -1,0 +1,70 @@
+@page "/admin"
+@attribute [ClientAuthorize(Roles = "PlatformAdmin")]
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject PlatformApiClient Api
+
+<PageTitle>Platform Admin</PageTitle>
+
+<div class="dashboard-shell">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h1 class="h3 mb-1">Platform Admin</h1>
+            <div class="text-muted">All stores in the shared SaaS environment.</div>
+        </div>
+        <a class="btn btn-outline-secondary" href="/login">Switch account</a>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="alert alert-warning">@error</div>
+    }
+    else if (stores is null)
+    {
+        <div class="placeholder-glow"><span class="placeholder col-12 py-5"></span></div>
+    }
+    else
+    {
+        <div class="panel">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th>Store</th>
+                        <th>Slug</th>
+                        <th>Domain</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var store in stores)
+                    {
+                        <tr>
+                            <td>@store.Name</td>
+                            <td><code>@store.Slug</code></td>
+                            <td>@store.Domain</td>
+                            <td><span class="badge text-bg-@(store.IsActive ? "success" : "secondary")">@(store.IsActive ? "Active" : "Inactive")</span></td>
+                            <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="/store/@store.Slug">View</a></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyCollection<StoreDto>? stores;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            stores = await Api.GetAsync<IReadOnlyCollection<StoreDto>>("api/admin/stores") ?? [];
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+}

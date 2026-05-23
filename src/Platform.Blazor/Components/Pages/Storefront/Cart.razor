@@ -1,0 +1,93 @@
+@page "/store/{StoreKey}/cart"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject PlatformApiClient Api
+@inject CartService CartService
+
+<PageTitle>Cart</PageTitle>
+
+<main class="container py-4">
+    <a class="btn btn-link px-0" href="/store/@StoreKey/products">Continue shopping</a>
+    <div class="row g-4">
+        <div class="col-lg-8">
+            <div class="panel">
+                <h1 class="h4 mb-3">Cart</h1>
+                @if (CartService.Items.Count == 0)
+                {
+                    <div class="text-muted">Your cart is empty.</div>
+                }
+                else
+                {
+                    <table class="table align-middle">
+                        <tbody>
+                            @foreach (var item in CartService.Items)
+                            {
+                                <tr>
+                                    <td>@item.Product.Name</td>
+                                    <td>@item.Quantity</td>
+                                    <td>@item.LineTotal.ToString("C")</td>
+                                    <td class="text-end">
+                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => CartService.Remove(item.Product.Id)">Remove</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <th colspan="2">Total</th>
+                                <th>@CartService.Total.ToString("C")</th>
+                                <th></th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                }
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="panel">
+                <h2 class="h5 mb-3">Checkout</h2>
+                @if (!string.IsNullOrWhiteSpace(message))
+                {
+                    <div class="alert alert-success">@message</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(error))
+                {
+                    <div class="alert alert-warning">@error</div>
+                }
+                <EditForm Model="checkout" OnValidSubmit="Submit">
+                    <label class="form-label">Name</label>
+                    <InputText class="form-control mb-3" @bind-Value="checkout.CustomerName" />
+                    <label class="form-label">Email</label>
+                    <InputText class="form-control mb-3" @bind-Value="checkout.CustomerEmail" />
+                    <button class="btn btn-primary w-100" disabled="@(CartService.Items.Count == 0)">Create order</button>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+</main>
+
+@code {
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private readonly CreateOrderRequest checkout = new();
+    private string? error;
+    private string? message;
+
+    private async Task Submit()
+    {
+        try
+        {
+            checkout.Items = CartService.Items.Select(x => new CreateOrderItemRequest
+            {
+                ProductId = x.Product.Id,
+                Quantity = x.Quantity
+            }).ToArray();
+            var order = await Api.PostAsync<CreateOrderRequest, OrderDto>($"api/storefront/{StoreKey}/checkout", checkout);
+            CartService.Clear();
+            message = $"Order {order?.OrderNumber} created.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+}

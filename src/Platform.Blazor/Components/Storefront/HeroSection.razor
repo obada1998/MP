@@ -1,0 +1,25 @@
+@using Platform.Blazor.Rendering
+
+<section class="store-hero" style="background-image: linear-gradient(90deg, rgba(7,18,31,.82), rgba(7,18,31,.25)), url('@ImageUrl')">
+    <div class="container py-5">
+        <div class="store-hero-content">
+            <h1>@Title</h1>
+            <p>@Subtitle</p>
+            @if (!string.IsNullOrWhiteSpace(ButtonText))
+            {
+                <a class="btn btn-warning btn-lg" href="@StoreUrlBuilder.Resolve(ButtonUrl, StoreKey)">@ButtonText</a>
+            }
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private string Title => JsonProps.GetString(Section.Props, "title", "Welcome");
+    private string Subtitle => JsonProps.GetString(Section.Props, "subtitle", "");
+    private string ImageUrl => JsonProps.GetString(Section.Props, "imageUrl", "https://placehold.co/1600x700?text=Storefront");
+    private string ButtonText => JsonProps.GetString(Section.Props, "buttonText", "");
+    private string ButtonUrl => JsonProps.GetString(Section.Props, "buttonUrl", $"/store/{StoreKey}/products");
+}

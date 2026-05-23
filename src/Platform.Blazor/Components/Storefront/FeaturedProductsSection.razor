@@ -1,0 +1,82 @@
+@using Platform.Blazor.Rendering
+@using Platform.Application.Products
+@inject PlatformApiClient Api
+@inject CartService Cart
+
+<section class="py-4 bg-light-subtle">
+    <div class="container">
+        <h2 class="h4 mb-3">@Heading</h2>
+        @if (products is null)
+        {
+            <div class="placeholder-glow"><span class="placeholder col-12 py-5"></span></div>
+        }
+        else
+        {
+            <div class="store-products store-products-@LayoutMode" style="--store-grid-columns:@Columns;--product-gap:@Gap;--product-image-ratio:@ImageRatio">
+                @foreach (var product in products)
+                {
+                    <article class="product-card">
+                        <a class="product-card-media" href="/store/@StoreKey/products/@product.Slug">
+                            <img src="@(product.PrimaryImageUrl ?? "https://placehold.co/600x450?text=Product")" alt="@product.Name" />
+                        </a>
+                        <div class="product-card-body">
+                            @if (ShowTitle)
+                            {
+                                <h3>@product.Name</h3>
+                            }
+                            @if (ShowDescription && !string.IsNullOrWhiteSpace(product.Description))
+                            {
+                                <p>@product.Description</p>
+                            }
+                            @if (ShowPrice)
+                            {
+                                <div class="text-muted">@product.BasePrice.ToString("C")</div>
+                            }
+                            @if (ShowButton)
+                            {
+                                <button class="btn btn-outline-primary btn-sm mt-2" @onclick="() => Cart.Add(product)">@ButtonText</button>
+                            }
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private IReadOnlyCollection<ProductDto>? products;
+    private string Heading => JsonProps.GetString(Section.Props, "heading", "Featured products");
+    private string LayoutMode => JsonProps.GetString(Section.Props, "layout", "grid").Equals("list", StringComparison.OrdinalIgnoreCase) ? "list" : "grid";
+    private int Columns => Math.Clamp(JsonProps.GetInt(Section.Props, "columns", 4), 1, 6);
+    private int Limit => Math.Clamp(JsonProps.GetInt(Section.Props, "limit", 4), 1, 12);
+    private string Gap => JsonProps.GetString(Section.Props, "gap", "16px");
+    private string ImageRatio => JsonProps.GetString(Section.Props, "imageRatio", "4 / 3");
+    private bool ShowTitle => JsonProps.GetBool(Section.Props, "showTitle", true);
+    private bool ShowPrice => JsonProps.GetBool(Section.Props, "showPrice", true);
+    private bool ShowDescription => JsonProps.GetBool(Section.Props, "showDescription");
+    private bool ShowButton => JsonProps.GetBool(Section.Props, "showButton", true);
+    private string ButtonText => JsonProps.GetString(Section.Props, "buttonText", "Add to cart");
+    private string Sort => JsonProps.GetString(Section.Props, "sort", "name");
+
+    protected override async Task OnInitializedAsync()
+    {
+        var ids = JsonProps.GetGuidArray(Section.Props, "productIds").ToHashSet();
+        var catalog = await Api.GetAsync<StorefrontCatalogDto>($"api/storefront/{StoreKey}/catalog");
+        var query = catalog?.Products ?? [];
+        products = SortProducts(ids.Count == 0 ? query : query.Where(x => ids.Contains(x.Id))).Take(Limit).ToArray();
+    }
+
+    private IEnumerable<ProductDto> SortProducts(IEnumerable<ProductDto> query)
+    {
+        return Sort switch
+        {
+            "priceAsc" => query.OrderBy(product => product.BasePrice).ThenBy(product => product.Name),
+            "priceDesc" => query.OrderByDescending(product => product.BasePrice).ThenBy(product => product.Name),
+            _ => query.OrderBy(product => product.Name)
+        };
+    }
+}

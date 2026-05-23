@@ -1,0 +1,14 @@
+@using Platform.Blazor.Rendering
+
+<section class="py-4">
+    <div class="container">
+        @((MarkupString)Html)
+    </div>
+</section>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private string Html => JsonProps.GetString(Section.Props, "html", "<div class=\"alert alert-light border\">Custom HTML</div>");
+}

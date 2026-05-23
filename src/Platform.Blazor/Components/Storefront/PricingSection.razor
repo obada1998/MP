@@ -1,0 +1,42 @@
+@using Platform.Blazor.Rendering
+
+<section class="store-pricing-section">
+    <div class="container">
+        <div class="store-section-heading">
+            <h2>@Heading</h2>
+        </div>
+        <div class="store-pricing-grid">
+            @foreach (var plan in Plans)
+            {
+                <article class="store-pricing-card">
+                    <h3>@JsonProps.GetString(plan, "name", "Plan")</h3>
+                    <strong>@JsonProps.GetString(plan, "price", "$0")</strong>
+                    <ul>
+                        @foreach (var feature in GetFeatures(plan))
+                        {
+                            <li>@feature</li>
+                        }
+                    </ul>
+                    <a class="btn btn-outline-primary w-100" href="#">@JsonProps.GetString(plan, "cta", "Choose plan")</a>
+                </article>
+            }
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private string Heading => JsonProps.GetString(Section.Props, "heading", "Pricing");
+    private IReadOnlyCollection<JsonObject> Plans => JsonProps.GetObjectArray(Section.Props, "plans").Count > 0
+        ? JsonProps.GetObjectArray(Section.Props, "plans")
+        : [new JsonObject { ["name"] = "Starter", ["price"] = "$0", ["features"] = new JsonArray("Feature one", "Feature two"), ["cta"] = "Choose plan" }];
+
+    private static IReadOnlyCollection<string> GetFeatures(JsonObject plan)
+    {
+        return JsonProps.GetStringArray(plan, "features").Count > 0
+            ? JsonProps.GetStringArray(plan, "features")
+            : ["Feature one", "Feature two"];
+    }
+}

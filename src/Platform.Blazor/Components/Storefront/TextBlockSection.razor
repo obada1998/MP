@@ -1,0 +1,21 @@
+@using Platform.Blazor.Rendering
+
+<section class="py-4">
+    <div class="container">
+        <div class="content-narrow">
+            @if (!string.IsNullOrWhiteSpace(Heading))
+            {
+                <h2>@Heading</h2>
+            }
+            <p class="lead">@Text</p>
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private string Heading => JsonProps.GetString(Section.Props, "heading");
+    private string Text => JsonProps.GetString(Section.Props, "text", "Add text in the page builder.");
+}

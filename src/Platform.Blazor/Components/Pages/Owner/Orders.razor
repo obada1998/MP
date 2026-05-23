@@ -1,0 +1,86 @@
+@page "/owner/{StoreId:guid}/orders"
+@attribute [ClientAuthorize(Roles = "StoreOwner,StoreStaff,PlatformAdmin")]
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject PlatformApiClient Api
+
+<PageTitle>Orders</PageTitle>
+
+<div class="dashboard-shell">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h1 class="h3 mb-1">Orders</h1>
+            <div class="text-muted">Checkout creates pending orders for later payment integration.</div>
+        </div>
+        <a class="btn btn-outline-secondary" href="/owner">Back</a>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="alert alert-warning">@error</div>
+    }
+
+    <div class="panel">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th>Order</th>
+                    <th>Customer</th>
+                    <th>Status</th>
+                    <th>Total</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var order in orders ?? [])
+                {
+                    <tr>
+                        <td><code>@order.OrderNumber</code></td>
+                        <td>@order.CustomerName<br /><small class="text-muted">@order.CustomerEmail</small></td>
+                        <td>
+                            <select class="form-select form-select-sm" value="@order.Status" @onchange="e => UpdateStatus(order.Id, e.Value?.ToString())">
+                                @foreach (var status in Enum.GetValues<OrderStatus>())
+                                {
+                                    <option value="@status">@status</option>
+                                }
+                            </select>
+                        </td>
+                        <td>@order.Total.ToString("C")</td>
+                        <td>@order.Items.Count items</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid StoreId { get; set; }
+
+    private IReadOnlyCollection<OrderDto>? orders;
+    private string? error;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        try
+        {
+            orders = await Api.GetAsync<IReadOnlyCollection<OrderDto>>($"api/stores/{StoreId}/orders") ?? [];
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task UpdateStatus(Guid orderId, string? statusText)
+    {
+        if (!Enum.TryParse<OrderStatus>(statusText, out var status))
+        {
+            return;
+        }
+
+        await Api.PatchAsync<UpdateOrderStatusRequest, OrderDto>($"api/stores/{StoreId}/orders/{orderId}/status", new UpdateOrderStatusRequest { Status = status });
+        await Load();
+    }
+}

@@ -1,0 +1,61 @@
+@inject AuthClient Auth
+@inject NavigationManager Navigation
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">Commerce SaaS</a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="nav flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Home</NavLink>
+        </div>
+
+        <AuthorizeView>
+            <Authorized Context="signedIn">
+                <AuthorizeView Roles="@PlatformRoles.PlatformAdmin">
+                    <Authorized Context="adminUser">
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link" href="admin">Platform admin</NavLink>
+                        </div>
+                    </Authorized>
+                </AuthorizeView>
+
+                <AuthorizeView Roles="StoreOwner,StoreStaff,PlatformAdmin">
+                    <Authorized Context="ownerUser">
+                        <div class="nav-item px-3">
+                            <NavLink class="nav-link" href="owner">Store owner</NavLink>
+                        </div>
+                    </Authorized>
+                </AuthorizeView>
+
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="store/demo-store">Storefront</NavLink>
+                </div>
+                <div class="nav-item px-3 mt-2">
+                    <button type="button" class="nav-link nav-button" @onclick="Logout">Sign out</button>
+                </div>
+            </Authorized>
+            <NotAuthorized>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="login">Sign in</NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="store/demo-store">Storefront</NavLink>
+                </div>
+            </NotAuthorized>
+        </AuthorizeView>
+    </nav>
+</div>
+
+@code {
+    private async Task Logout()
+    {
+        await Auth.LogoutAsync();
+        Navigation.NavigateTo("/", replace: true);
+    }
+}

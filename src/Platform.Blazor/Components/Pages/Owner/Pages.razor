@@ -1,0 +1,447 @@
+@page "/owner/{StoreId:guid}/pages"
+@attribute [ClientAuthorize(Roles = "StoreOwner,StoreStaff,PlatformAdmin")]
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using System.Text.Json
+@inject PlatformApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>Pages</PageTitle>
+
+<div class="dashboard-shell">
+    <div class="page-studio-hero">
+        <div>
+            <span class="studio-eyebrow">Website studio</span>
+            <h1>Create an ecommerce page from a store template</h1>
+            <p>Choose a ready-made commerce layout with navigation, products, categories, offers, and customer trust sections.</p>
+        </div>
+        <a class="btn btn-outline-secondary" href="/owner">Back to stores</a>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="alert alert-warning">@error</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="alert alert-success">@message</div>
+    }
+
+    <section class="template-studio-grid">
+        <aside class="template-create-panel">
+            <div class="studio-panel-heading">
+                <span>Step 1</span>
+                <h2>Set up the page</h2>
+            </div>
+
+            <div class="selected-template-summary" style="--template-accent:@SelectedTemplate.AccentColor">
+                <div class="template-thumb @SelectedTemplate.ThumbnailClass">
+                    <span></span><span></span><span></span>
+                </div>
+                <div>
+                    <strong>@SelectedTemplate.Title</strong>
+                    <small>@SelectedTemplate.Category</small>
+                </div>
+            </div>
+
+            <EditForm Model="createForm" OnValidSubmit="CreatePageFromTemplate">
+                <div class="mb-3">
+                    <label class="form-label">Page title</label>
+                    <InputText class="form-control" @bind-Value="createForm.Title" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Slug</label>
+                    <InputText class="form-control" @bind-Value="createForm.Slug" />
+                    <div class="form-text">Leave as-is or rename before creating.</div>
+                </div>
+                <div class="form-check mb-2">
+                    <InputCheckbox class="form-check-input" @bind-Value="createForm.IsHomePage" />
+                    <label class="form-check-label">Set as homepage</label>
+                </div>
+                <div class="form-check mb-3">
+                    <InputCheckbox class="form-check-input" @bind-Value="createForm.IsPublished" />
+                    <label class="form-check-label">Publish after creating</label>
+                </div>
+                <button class="btn btn-primary w-100" disabled="@busy">Create and open editor</button>
+            </EditForm>
+
+            <button type="button" class="btn btn-link w-100 mt-2" @onclick="StartBlank">Start from a blank canvas</button>
+        </aside>
+
+        <main class="template-gallery-panel">
+            <div class="studio-panel-heading gallery-heading">
+                <div>
+                    <span>Step 2</span>
+                    <h2>Choose a Wix-style ecommerce template</h2>
+                </div>
+                <input class="form-control template-search" placeholder="Search templates" @bind="templateSearch" @bind:event="oninput" />
+            </div>
+
+            <div class="template-category-strip">
+                <button type="button" class="@(ActiveCategory == AllCategories ? "active" : "")" @onclick="() => SetCategory(AllCategories)">All</button>
+                @foreach (var category in PageTemplateCatalog.Categories)
+                {
+                    <button type="button" class="@(ActiveCategory == category ? "active" : "")" @onclick="() => SetCategory(category)">@category</button>
+                }
+            </div>
+
+            <div class="template-card-grid">
+                @foreach (var template in FilteredTemplates)
+                {
+                    <article class="template-card @(selectedTemplateId == template.Id ? "selected" : "")" style="--template-accent:@template.AccentColor">
+                        <button type="button" class="template-preview-button" @onclick="() => Preview(template)">
+                            <div class="template-thumb @template.ThumbnailClass">
+                                <span></span><span></span><span></span>
+                            </div>
+                        </button>
+                        <div class="template-card-body">
+                            <div>
+                                <span class="template-category">@template.Category</span>
+                                <h3>@template.Title</h3>
+                                <p>@template.Description</p>
+                            </div>
+                            <div class="template-card-actions">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => Preview(template)">Preview</button>
+                                <button type="button" class="btn btn-sm btn-primary" @onclick="() => UseTemplate(template)">Use template</button>
+                            </div>
+                        </div>
+                    </article>
+                }
+            </div>
+        </main>
+    </section>
+
+    <section class="panel pages-manager-panel">
+        <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+            <div>
+                <h2 class="h5 mb-1">Existing pages</h2>
+                <div class="text-muted">Template-created pages are saved as editable JSON layouts.</div>
+            </div>
+            <button type="button" class="btn btn-outline-primary" @onclick="StartBlank">Create New Page</button>
+        </div>
+
+        @if (pages is null)
+        {
+            <div class="placeholder-glow"><span class="placeholder col-12 py-5"></span></div>
+        }
+        else if (pages.Count == 0)
+        {
+            <div class="page-empty-state">
+                <strong>No pages yet</strong>
+                <span>Select a template above to create your first page.</span>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Page</th>
+                            <th>Flags</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var pageItem in pages)
+                        {
+                            <tr>
+                                <td>
+                                    <strong>@pageItem.Title</strong><br />
+                                    <code>@pageItem.Slug</code>
+                                </td>
+                                <td>
+                                    @if (pageItem.IsHomePage)
+                                    {
+                                        <span class="badge text-bg-primary">Home</span>
+                                    }
+                                    <span class="badge text-bg-@(pageItem.IsPublished ? "success" : "secondary")">@(pageItem.IsPublished ? "Published" : "Draft")</span>
+                                </td>
+                                <td class="text-end">
+                                    <a class="btn btn-sm btn-primary" href="@($"/owner/{StoreId}/pages/{pageItem.Id}/builder")">Open editor</a>
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => Edit(pageItem)">Settings</button>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => Delete(pageItem.Id)">Delete</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    @if (editingId.HasValue)
+    {
+        <section class="panel page-settings-panel">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+                <h2 class="h5 mb-0">Page settings</h2>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CancelEdit">Close</button>
+            </div>
+            <EditForm Model="editForm" OnValidSubmit="SaveSettings">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Title</label>
+                        <InputText class="form-control" @bind-Value="editForm.Title" />
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Slug</label>
+                        <InputText class="form-control" @bind-Value="editForm.Slug" />
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <label class="form-check">
+                            <InputCheckbox class="form-check-input" @bind-Value="editForm.IsHomePage" />
+                            <span class="form-check-label">Homepage</span>
+                        </label>
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <label class="form-check">
+                            <InputCheckbox class="form-check-input" @bind-Value="editForm.IsPublished" />
+                            <span class="form-check-label">Published</span>
+                        </label>
+                    </div>
+                    <div class="col-12">
+                        <button class="btn btn-primary" disabled="@busy">Save settings</button>
+                    </div>
+                </div>
+            </EditForm>
+        </section>
+    }
+</div>
+
+@if (previewTemplate is not null)
+{
+    <div class="template-modal-backdrop" @onclick="ClosePreview">
+        <section class="template-modal" @onclick:stopPropagation="true">
+            <header class="template-modal-header">
+                <div>
+                    <span class="template-category">@previewTemplate.Category</span>
+                    <h2>@previewTemplate.Title</h2>
+                    <p>@previewTemplate.Description</p>
+                </div>
+                <button type="button" class="btn-close" aria-label="Close preview" @onclick="ClosePreview"></button>
+            </header>
+            <div class="template-modal-toolbar">
+                <div class="editor-device-switch">
+                    <button type="button" class="@(previewDevice == "desktop" ? "active" : "")" @onclick='() => SetPreviewDevice("desktop")'>Desktop</button>
+                    <button type="button" class="@(previewDevice == "tablet" ? "active" : "")" @onclick='() => SetPreviewDevice("tablet")'>Tablet</button>
+                    <button type="button" class="@(previewDevice == "mobile" ? "active" : "")" @onclick='() => SetPreviewDevice("mobile")'>Mobile</button>
+                </div>
+                <button type="button" class="btn btn-primary" @onclick="UsePreviewTemplate">Use this template</button>
+            </div>
+            <div class="template-preview-shell">
+                <div class="template-preview-frame @previewDevice">
+                    @if (previewTemplate.Layout.Sections.Count == 0)
+                    {
+                        <div class="page-empty-state">
+                            <strong>Blank canvas</strong>
+                            <span>Create a page with no starter sections.</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <DynamicPageRenderer Layout="previewTemplate.Layout" StoreKey="" />
+                    }
+                </div>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter] public Guid StoreId { get; set; }
+
+    private const string AllCategories = "All";
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+
+    private IReadOnlyCollection<PageDto>? pages;
+    private readonly UpsertPageRequest createForm = new() { Title = "Fashion Boutique", Slug = "fashion-boutique" };
+    private readonly UpsertPageRequest editForm = new();
+    private Guid? editingId;
+    private string selectedTemplateId = "fashion-boutique";
+    private string ActiveCategory { get; set; } = AllCategories;
+    private string templateSearch = string.Empty;
+    private PageTemplateDto? previewTemplate;
+    private string previewDevice = "desktop";
+    private bool busy;
+    private string? error;
+    private string? message;
+
+    private PageTemplateDto SelectedTemplate => PageTemplateCatalog.Get(selectedTemplateId);
+
+    private IEnumerable<PageTemplateDto> FilteredTemplates => PageTemplateCatalog.All
+        .Where(template => ActiveCategory == AllCategories || template.Category == ActiveCategory)
+        .Where(template => string.IsNullOrWhiteSpace(templateSearch) ||
+            template.Title.Contains(templateSearch, StringComparison.OrdinalIgnoreCase) ||
+            template.Description.Contains(templateSearch, StringComparison.OrdinalIgnoreCase) ||
+            template.Category.Contains(templateSearch, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        try
+        {
+            pages = await Api.GetAsync<IReadOnlyCollection<PageDto>>($"api/stores/{StoreId}/pages") ?? [];
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private void SetCategory(string category) => ActiveCategory = category;
+
+    private void Preview(PageTemplateDto template)
+    {
+        previewTemplate = template;
+        previewDevice = "desktop";
+    }
+
+    private void ClosePreview() => previewTemplate = null;
+
+    private void SetPreviewDevice(string device) => previewDevice = device;
+
+    private void UseTemplate(PageTemplateDto template)
+    {
+        selectedTemplateId = template.Id;
+        createForm.Title = template.Id == PageTemplateCatalog.BlankTemplateId ? "Blank Page" : template.Title;
+        createForm.Slug = BuildUniqueSlug(createForm.Title);
+        message = $"Selected {template.Title}.";
+        ClosePreview();
+    }
+
+    private void UsePreviewTemplate()
+    {
+        if (previewTemplate is not null)
+        {
+            UseTemplate(previewTemplate);
+        }
+    }
+
+    private void StartBlank()
+    {
+        UseTemplate(PageTemplateCatalog.Get(PageTemplateCatalog.BlankTemplateId));
+    }
+
+    private async Task CreatePageFromTemplate()
+    {
+        busy = true;
+        error = null;
+        message = null;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(createForm.Title))
+            {
+                createForm.Title = SelectedTemplate.Title;
+            }
+
+            if (string.IsNullOrWhiteSpace(createForm.Slug) || pages?.Any(page => page.Slug.Equals(createForm.Slug, StringComparison.OrdinalIgnoreCase)) == true)
+            {
+                createForm.Slug = BuildUniqueSlug(createForm.Title);
+            }
+
+            var page = await Api.PostAsync<UpsertPageRequest, PageDto>($"api/stores/{StoreId}/pages", createForm)
+                ?? throw new InvalidOperationException("Page creation failed.");
+
+            var layout = PageTemplateCatalog.CreateLayout(selectedTemplateId, page.Id.ToString("n"));
+            var request = new SavePageLayoutRequest
+            {
+                Publish = createForm.IsPublished,
+                LayoutJson = JsonSerializer.Serialize(layout, JsonOptions)
+            };
+            await Api.PostAsync<SavePageLayoutRequest, PageLayoutDto>($"api/stores/{StoreId}/pages/{page.Id}/layout", request);
+
+            Navigation.NavigateTo($"/owner/{StoreId}/pages/{page.Id}/builder");
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private void Edit(PageDto page)
+    {
+        editingId = page.Id;
+        editForm.Title = page.Title;
+        editForm.Slug = page.Slug;
+        editForm.IsHomePage = page.IsHomePage;
+        editForm.IsPublished = page.IsPublished;
+    }
+
+    private async Task SaveSettings()
+    {
+        if (!editingId.HasValue)
+        {
+            return;
+        }
+
+        busy = true;
+        error = null;
+        try
+        {
+            await Api.PutAsync<UpsertPageRequest, PageDto>($"api/stores/{StoreId}/pages/{editingId}", editForm);
+            editingId = null;
+            message = "Page settings saved.";
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task Delete(Guid pageId)
+    {
+        try
+        {
+            await Api.DeleteAsync($"api/stores/{StoreId}/pages/{pageId}");
+            message = "Page deleted.";
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private void CancelEdit() => editingId = null;
+
+    private string BuildUniqueSlug(string title)
+    {
+        var baseSlug = Slugify(title);
+        if (string.IsNullOrWhiteSpace(baseSlug))
+        {
+            baseSlug = "page";
+        }
+
+        if (pages is null || !pages.Any(page => page.Slug.Equals(baseSlug, StringComparison.OrdinalIgnoreCase)))
+        {
+            return baseSlug;
+        }
+
+        return $"{baseSlug}-{DateTimeOffset.UtcNow:HHmmss}";
+    }
+
+    private static string Slugify(string value)
+    {
+        var chars = value
+            .Trim()
+            .ToLowerInvariant()
+            .Select(character => char.IsLetterOrDigit(character) ? character : '-')
+            .ToArray();
+        var slug = new string(chars);
+        while (slug.Contains("--", StringComparison.Ordinal))
+        {
+            slug = slug.Replace("--", "-", StringComparison.Ordinal);
+        }
+
+        return slug.Trim('-');
+    }
+}

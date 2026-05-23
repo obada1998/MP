@@ -1,0 +1,60 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@using Microsoft.AspNetCore.Components.Routing
+@inject NavigationManager Navigation
+
+<div class="page @(IsBuilderRoute ? "builder-page" : "")">
+    @if (!IsBuilderRoute)
+    {
+        <div class="sidebar">
+            <NavMenu />
+        </div>
+    }
+
+    <main>
+        @if (!IsBuilderRoute)
+        {
+            <div class="top-row px-4">
+                <a href="/owner">Dashboard</a>
+                <a href="/store/demo-store">Demo store</a>
+            </div>
+        }
+
+        <article class="content px-4 @(IsBuilderRoute ? "builder-content" : "")">
+            @Body
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">x</span>
+</div>
+
+@code {
+    private bool IsBuilderRoute
+    {
+        get
+        {
+            var path = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0];
+            return path.Contains("/pages/", StringComparison.OrdinalIgnoreCase) &&
+                   path.EndsWith("/builder", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+}

@@ -1,0 +1,57 @@
+@using Platform.Blazor.Rendering
+@inject PlatformApiClient Api
+
+<section class="store-logo-section @AlignmentClass">
+    <a class="store-logo-link @(ShowBrandText ? "has-text" : "")" href="@StoreUrlBuilder.Resolve(LinkUrl, StoreKey)">
+        @if (!string.IsNullOrWhiteSpace(EffectiveLogoUrl))
+        {
+            <img class="store-logo-image" src="@EffectiveLogoUrl" alt="@AltText" style="object-fit:@ObjectFit" />
+        }
+        else
+        {
+            <span class="store-logo-placeholder">Logo</span>
+        }
+        @if (ShowBrandText)
+        {
+            <span class="store-logo-text">@BrandText</span>
+        }
+    </a>
+</section>
+
+@code {
+    [Parameter] public PageSectionDefinition Section { get; set; } = new();
+    [Parameter] public string StoreKey { get; set; } = string.Empty;
+
+    private StorefrontNavigationDto? navigation;
+    private string CustomLogoUrl => JsonProps.GetString(Section.Props, "logoUrl");
+    private string EffectiveLogoUrl => !string.IsNullOrWhiteSpace(CustomLogoUrl)
+        ? CustomLogoUrl
+        : UseStoreLogo ? navigation?.Store.LogoUrl ?? string.Empty : string.Empty;
+    private string AltText => JsonProps.GetString(Section.Props, "altText", BrandText);
+    private string BrandText => JsonProps.GetString(Section.Props, "brandText", navigation?.Store.Name ?? "Store");
+    private string LinkUrl => JsonProps.GetString(Section.Props, "linkUrl", "/");
+    private string ObjectFit => JsonProps.GetString(Section.Props, "objectFit", "contain");
+    private bool UseStoreLogo => JsonProps.GetBool(Section.Props, "useStoreLogo", true);
+    private bool ShowBrandText => JsonProps.GetBool(Section.Props, "showBrandText");
+    private string AlignmentClass => JsonProps.GetString(Section.Props, "align", "center").ToLowerInvariant() switch
+    {
+        "start" => "align-start",
+        "end" => "align-end",
+        _ => "align-center"
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (UseStoreLogo && !string.IsNullOrWhiteSpace(StoreKey))
+        {
+            try
+            {
+                navigation = await Api.GetAsync<StorefrontNavigationDto>($"api/storefront/{StoreKey}/navigation");
+            }
+            catch
+            {
+                navigation = null;
+            }
+        }
+    }
+}

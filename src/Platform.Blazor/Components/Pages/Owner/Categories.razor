@@ -1,0 +1,149 @@
+@page "/owner/{StoreId:guid}/categories"
+@attribute [ClientAuthorize(Roles = "StoreOwner,StoreStaff,PlatformAdmin")]
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject PlatformApiClient Api
+
+<PageTitle>Categories</PageTitle>
+
+<div class="dashboard-shell">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h1 class="h3 mb-1">Categories</h1>
+            <div class="text-muted">Organize products for this store.</div>
+        </div>
+        <a class="btn btn-outline-secondary" href="/owner">Back</a>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="alert alert-warning">@error</div>
+    }
+
+    <div class="row g-3">
+        <div class="col-lg-4">
+            <div class="panel">
+                <h2 class="h5 mb-3">Category</h2>
+                <EditForm Model="form" OnValidSubmit="Save">
+                    <div class="mb-3">
+                        <label class="form-label">Name</label>
+                        <InputText class="form-control" @bind-Value="form.Name" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Slug</label>
+                        <InputText class="form-control" @bind-Value="form.Slug" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <InputTextArea class="form-control" @bind-Value="form.Description" />
+                    </div>
+                    <div class="form-check mb-3">
+                        <InputCheckbox class="form-check-input" @bind-Value="form.IsActive" />
+                        <label class="form-check-label">Active</label>
+                    </div>
+                    <button class="btn btn-primary w-100">Save</button>
+                    <button type="button" class="btn btn-link w-100" @onclick="Reset">New category</button>
+                </EditForm>
+            </div>
+        </div>
+        <div class="col-lg-8">
+            <div class="panel">
+                <table class="table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Slug</th>
+                            <th>Products</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var category in categories ?? [])
+                        {
+                            <tr>
+                                <td>@category.Name</td>
+                                <td><code>@category.Slug</code></td>
+                                <td>@category.ProductCount</td>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => Edit(category)">Edit</button>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="() => Delete(category.Id)">Delete</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid StoreId { get; set; }
+
+    private IReadOnlyCollection<CategoryDto>? categories;
+    private readonly UpsertCategoryRequest form = new();
+    private Guid? editingId;
+    private string? error;
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Load()
+    {
+        try
+        {
+            categories = await Api.GetAsync<IReadOnlyCollection<CategoryDto>>($"api/stores/{StoreId}/categories") ?? [];
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task Save()
+    {
+        try
+        {
+            if (editingId.HasValue)
+            {
+                await Api.PutAsync<UpsertCategoryRequest, CategoryDto>($"api/stores/{StoreId}/categories/{editingId}", form);
+            }
+            else
+            {
+                await Api.PostAsync<UpsertCategoryRequest, CategoryDto>($"api/stores/{StoreId}/categories", form);
+            }
+            Reset();
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private void Edit(CategoryDto category)
+    {
+        editingId = category.Id;
+        form.Name = category.Name;
+        form.Slug = category.Slug;
+        form.Description = category.Description;
+        form.IsActive = category.IsActive;
+        form.SortOrder = category.SortOrder;
+        form.ParentCategoryId = category.ParentCategoryId;
+    }
+
+    private async Task Delete(Guid categoryId)
+    {
+        await Api.DeleteAsync($"api/stores/{StoreId}/categories/{categoryId}");
+        await Load();
+    }
+
+    private void Reset()
+    {
+        editingId = null;
+        form.Name = string.Empty;
+        form.Slug = string.Empty;
+        form.Description = string.Empty;
+        form.IsActive = true;
+        form.ParentCategoryId = null;
+        form.SortOrder = 0;
+    }
+}

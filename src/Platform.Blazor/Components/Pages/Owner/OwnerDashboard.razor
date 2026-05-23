@@ -1,0 +1,122 @@
+@page "/owner"
+@attribute [ClientAuthorize(Roles = "StoreOwner,StoreStaff,PlatformAdmin")]
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@inject PlatformApiClient Api
+
+<PageTitle>Store Owner</PageTitle>
+
+<div class="dashboard-shell">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+        <div>
+            <h1 class="h3 mb-1">Store Owner</h1>
+            <div class="text-muted">Manage tenant stores and operational modules.</div>
+        </div>
+        <a class="btn btn-outline-secondary" href="/login">Sign in</a>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="alert alert-warning">@error</div>
+    }
+
+    <div class="row g-3">
+        <div class="col-lg-8">
+            <div class="panel">
+                <h2 class="h5 mb-3">My stores</h2>
+                @if (stores is null)
+                {
+                    <div class="placeholder-glow"><span class="placeholder col-12 py-5"></span></div>
+                }
+                else if (stores.Count == 0)
+                {
+                    <div class="text-muted">No stores yet.</div>
+                }
+                else
+                {
+                    <div class="row g-3">
+                        @foreach (var store in stores)
+                        {
+                            <div class="col-md-6">
+                                <div class="store-admin-card">
+                                    <div>
+                                        <h3>@store.Name</h3>
+                                        <code>@store.Slug</code>
+                                    </div>
+                                    <div class="store-admin-actions">
+                                        <a href="/owner/@store.Id/products">Products</a>
+                                        <a href="/owner/@store.Id/categories">Categories</a>
+                                        <a href="/owner/@store.Id/pages">Pages</a>
+                                        <a href="/owner/@store.Id/orders">Orders</a>
+                                        <a href="/owner/@store.Id/settings">Settings</a>
+                                        <a href="/store/@store.Slug">Storefront</a>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="panel">
+                <h2 class="h5 mb-3">Create store</h2>
+                <EditForm Model="createStore" OnValidSubmit="CreateStore">
+                    <div class="mb-3">
+                        <label class="form-label">Name</label>
+                        <InputText class="form-control" @bind-Value="createStore.Name" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Slug</label>
+                        <InputText class="form-control" @bind-Value="createStore.Slug" />
+                    </div>
+                    <button class="btn btn-primary w-100" disabled="@busy">Create</button>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private IReadOnlyCollection<StoreDto>? stores;
+    private readonly CreateStoreRequest createStore = new();
+    private bool busy;
+    private string? error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        try
+        {
+            stores = await Api.GetAsync<IReadOnlyCollection<StoreDto>>("api/stores/mine") ?? [];
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task CreateStore()
+    {
+        busy = true;
+        error = null;
+        try
+        {
+            await Api.PostAsync<CreateStoreRequest, StoreDto>("api/stores", createStore);
+            createStore.Name = string.Empty;
+            createStore.Slug = string.Empty;
+            await Load();
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+}

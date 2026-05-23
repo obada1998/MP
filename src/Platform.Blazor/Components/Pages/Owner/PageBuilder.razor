@@ -1,0 +1,2178 @@
+@page "/owner/{StoreId:guid}/pages/{PageId:guid}/builder"
+@attribute [ClientAuthorize(Roles = "StoreOwner,StoreStaff,PlatformAdmin")]
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using System.Globalization
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@inject PlatformApiClient Api
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>Page Builder</PageTitle>
+
+<div class="editor-shell" tabindex="0" @onkeydown="HandleEditorKeyDown" @onclick="ClearSelection">
+    <header class="editor-topbar" @onclick:stopPropagation="true" @onkeydown:stopPropagation="true">
+        <div>
+            <a class="editor-back" href="/owner/@StoreId/pages">Pages</a>
+            <h1>@(currentPage?.Title ?? "Page Builder")</h1>
+            @if (currentPage is not null)
+            {
+                <span class="editor-page-slug">/@currentPage.Slug</span>
+            }
+            <span class="editor-status @(hasChanges ? "dirty" : "saved")">@(hasChanges ? "Unsaved changes" : "Saved")</span>
+        </div>
+        <div class="editor-actions">
+            <button type="button" class="btn btn-outline-secondary" disabled="@(!CanUndo)" @onclick="Undo">Undo</button>
+            <button type="button" class="btn btn-outline-secondary" disabled="@(!CanRedo)" @onclick="Redo">Redo</button>
+            @if (!string.IsNullOrWhiteSpace(PreviewUrl))
+            {
+                <a class="btn btn-outline-secondary" href="@PreviewUrl" target="_blank">Preview</a>
+            }
+            <button type="button" class="btn btn-outline-primary" disabled="@busy" @onclick="() => Save(false)">Save draft</button>
+            <button type="button" class="btn btn-primary" disabled="@busy" @onclick="() => Save(true)">Publish</button>
+        </div>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(error))
+    {
+        <div class="editor-toast error" @onclick:stopPropagation="true">@error</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="editor-toast success" @onclick:stopPropagation="true">@message</div>
+    }
+
+    <div class="editor-workspace @(leftPanelOpen ? "" : "left-collapsed") @(inspectorOpen ? "" : "right-collapsed")">
+        <aside class="editor-sidebar @(leftPanelOpen ? "" : "is-collapsed")" @onclick:stopPropagation="true" @onkeydown:stopPropagation="true">
+            <button type="button" class="editor-panel-rail editor-panel-rail-left" title="Open Add elements" @onclick="ToggleLeftPanel">
+                <span>Add</span>
+            </button>
+            <div class="editor-panel-content">
+                <div class="editor-panel-close-row">
+                    <strong>@LeftPanelTitle</strong>
+                    <button type="button" title="Hide Add elements panel" @onclick="ToggleLeftPanel">Hide</button>
+                </div>
+                <nav class="editor-left-tabs" aria-label="Builder panels">
+                    <button type="button" class="@(IsLeftPanel("add") ? "active" : "")" @onclick="ShowAddPanel">Add</button>
+                    <button type="button" class="@(IsLeftPanel("layers") ? "active" : "")" @onclick="ShowLayersPanel">Layers</button>
+                    <button type="button" class="@(IsLeftPanel("pages") ? "active" : "")" @onclick="ShowPagesPanel">Pages</button>
+                </nav>
+
+                @if (IsLeftPanel("pages"))
+                {
+                    <section class="editor-site-panel">
+                        <div class="editor-panel-heading">
+                            <h2>Site pages</h2>
+                            <span>@(sitePages?.Count ?? 0) pages</span>
+                        </div>
+                        <div class="editor-site-pages">
+                            @foreach (var pageItem in sitePages ?? [])
+                            {
+                                <a class="@(pageItem.Id == PageId ? "active" : "")" href="@($"/owner/{StoreId}/pages/{pageItem.Id}/builder")">
+                                    <strong>@pageItem.Title</strong>
+                                    <small>@pageItem.Slug @(pageItem.IsHomePage ? "Home" : "")</small>
+                                </a>
+                            }
+                        </div>
+                        <div class="editor-site-actions">
+                            <a class="btn btn-sm btn-outline-primary w-100" href="/owner/@StoreId/pages">Create page</a>
+                            <button type="button" class="btn btn-sm btn-outline-secondary w-100" disabled="@HasNavigation" @onclick="AddStoreNavigation">Add store navigation</button>
+                        </div>
+                    </section>
+                }
+                else if (IsLeftPanel("layers"))
+                {
+                    <section class="editor-layers-panel">
+                        <div class="editor-panel-heading">
+                            <h2>Layers</h2>
+                            <span>@CountElements(pageLayout.Sections) items</span>
+                        </div>
+                        @if (pageLayout.Sections.Count == 0)
+                        {
+                            <div class="editor-panel-empty">
+                                <strong>No layers yet</strong>
+                                <span>Add elements to build the page structure.</span>
+                            </div>
+                        }
+                        else
+                        {
+                            @RenderLayerTree(pageLayout.Sections, 0)
+                        }
+                    </section>
+                }
+                else
+                {
+                    <div class="editor-panel-heading">
+                        <h2>Add elements</h2>
+                        <span>Drag or click</span>
+                    </div>
+                    <input class="form-control form-control-sm editor-search" placeholder="Search elements" @bind="searchText" @bind:event="oninput" />
+                    @foreach (var group in FilteredGroups)
+                    {
+                        <section class="editor-element-group">
+                            <h3>@group</h3>
+                            <div class="editor-element-grid">
+                                @foreach (var component in FilteredComponents.Where(x => x.Group == group))
+                                {
+                                    <article class="editor-element-card"
+                                             draggable="true"
+                                             @ondragstart="() => StartComponentDrag(component.Type)"
+                                             @ondragend="ClearDrag">
+                                        <span>@component.Icon</span>
+                                        <div>
+                                            <strong>@component.Name</strong>
+                                            <small>@component.Description</small>
+                                        </div>
+                                        <button type="button" title="Add to page" @onclick:stopPropagation="true" @onclick="() => InsertElement(component.Type, null, pageLayout.Sections.Count)">Add</button>
+                                    </article>
+                                }
+                            </div>
+                        </section>
+                    }
+                }
+            </div>
+        </aside>
+
+        <main class="editor-stage" @onclick:stopPropagation="true">
+            <div class="editor-stage-toolbar">
+                <div class="editor-canvas-title">
+                    <strong>Canvas</strong>
+                    <span>@(CountElements(pageLayout.Sections)) elements</span>
+                    @if (SelectedBox is not null)
+                    {
+                        <span class="editor-selection-readout">
+                            X @Math.Round(SelectedBox.X) Y @Math.Round(SelectedBox.Y) W @Math.Round(SelectedBox.Width) H @Math.Round(SelectedBox.Height)
+                        </span>
+                    }
+                </div>
+                <div class="editor-stage-tools">
+                    <div class="editor-panel-toggles" aria-label="Builder panels">
+                        <button type="button" class="@(leftPanelOpen ? "active" : "")" @onclick="ToggleLeftPanel">Add / Layers</button>
+                        <button type="button" class="@(inspectorOpen ? "active" : "")" @onclick="ToggleInspector">Settings</button>
+                    </div>
+                    <div class="editor-zoom-controls" aria-label="Canvas zoom">
+                        <button type="button" title="Zoom out" @onclick="ZoomOut">-</button>
+                        <button type="button" title="Reset zoom" @onclick="ResetZoom">@zoomPercent%</button>
+                        <button type="button" title="Zoom in" @onclick="ZoomIn">+</button>
+                    </div>
+                    <label class="editor-snap-control">
+                        <span>Snap</span>
+                        <input type="number" min="0" max="32" value="@snapDistance" @onchange="args => SetSnapDistance(args.Value?.ToString())" />
+                    </label>
+                    <label class="editor-show-hidden-control">
+                        <input type="checkbox" checked="@showHiddenElements" @onchange="args => showHiddenElements = args.Value is true" />
+                        <span>Show hidden</span>
+                    </label>
+                    <div class="editor-device-switch">
+                        <button type="button" class="@(deviceMode == "desktop" ? "active" : "")" @onclick="SetDesktop">Desktop</button>
+                        <button type="button" class="@(deviceMode == "tablet" ? "active" : "")" @onclick="SetTablet">Tablet</button>
+                        <button type="button" class="@(deviceMode == "mobile" ? "active" : "")" @onclick="SetMobile">Mobile</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="editor-canvas-wrap">
+                <section @ref="canvasRef"
+                         class="editor-canvas @deviceMode @(draggedComponentType is not null ? "is-palette-dragging" : "")"
+                         style="@CanvasStyle"
+                         tabindex="0"
+                         @ondragenter="HandleCanvasDragEnter"
+                         @ondragover="HandleCanvasDragOver"
+                         @ondragover:preventDefault="true"
+                         @ondragleave="HandleCanvasDragLeave"
+                         @ondrop="HandleCanvasDrop"
+                         @ondrop:preventDefault="true"
+                         @onpointermove="HandlePointerMove"
+                         @onpointerup="HandlePointerUp"
+                         @onpointercancel="HandlePointerCancel">
+                    <div class="editor-canvas-background" @onclick="ClearSelection"></div>
+                    @foreach (var guide in alignmentGuides)
+                    {
+                        <div class="editor-alignment-guide @(guide.Axis == "x" ? "vertical" : "horizontal")"
+                             style="@(guide.Axis == "x" ? $"left:{EditorGeometry.FormatPixel(guide.Position)}" : $"top:{EditorGeometry.FormatPixel(guide.Position)}")"></div>
+                    }
+                    @if (showCanvasDropIndicator)
+                    {
+                        <div class="editor-canvas-drop-indicator"
+                             style="left:@EditorGeometry.FormatPixel(paletteDropX);top:@EditorGeometry.FormatPixel(paletteDropY)">
+                            <span>@draggedComponentType</span>
+                        </div>
+                    }
+                    @if (!HasNavigation)
+                    {
+                        <div class="editor-nav-prompt">
+                            <div>
+                                <strong>No store navigation on this page</strong>
+                                <span>Add a header so shoppers can move between Home, Shop, Cart, and other pages.</span>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-primary" @onclick="AddStoreNavigation">Add header</button>
+                        </div>
+                    }
+
+                    @DropZone(new EditorDropTarget(null, 0), pageLayout.Sections.Count == 0)
+
+                    @if (pageLayout.Sections.Count == 0)
+                    {
+                        <div class="editor-empty-canvas">
+                            <strong>Start designing</strong>
+                            <span>Drag sections, text, media, buttons, forms, or commerce blocks here.</span>
+                        </div>
+                    }
+
+                    @for (var i = 0; i < pageLayout.Sections.Count; i++)
+                    {
+                        var index = i;
+                        var section = pageLayout.Sections[index];
+                        if (ShouldRenderElementInEditor(section.Id))
+                        {
+                            <EditorCanvasNode Section="section"
+                                              ParentId="@null"
+                                              Index="index"
+                                              Depth="0"
+                                              SelectedElementId="@selectedElementId"
+                                              ActiveDropTarget="@activeDropTarget"
+                                              LiveBoxes="@liveBoxes"
+                                              StoreKey="@(currentStore?.Slug ?? string.Empty)"
+                                              ShowHiddenElements="@showHiddenElements"
+                                              SelectRequested="SelectElement"
+                                              InteractionStarted="BeginElementInteraction"
+                                              DropRequested="HandleDrop"
+                                              DropTargetChanged="SetActiveDropTarget"
+                                              DuplicateRequested="DuplicateElement"
+                                              DeleteRequested="DeleteElement"
+                                              ToggleVisibilityRequested="ToggleElementVisibility"
+                                              ToggleLockRequested="ToggleElementLock"
+                                              ZIndexRequested="HandleZIndexRequest"
+                                              InlineEditRequested="HandleInlineEdit"
+                                              MoveRequested="MoveElement" />
+                        }
+                        @DropZone(new EditorDropTarget(null, index + 1), false)
+                    }
+                </section>
+            </div>
+        </main>
+
+        <aside class="editor-inspector @(inspectorOpen ? "" : "is-collapsed")" @onclick:stopPropagation="true" @onkeydown:stopPropagation="true">
+            <button type="button" class="editor-panel-rail editor-panel-rail-right" title="Open Settings" @onclick="ToggleInspector">
+                <span>Settings</span>
+            </button>
+            <div class="editor-panel-content">
+                <div class="editor-panel-heading">
+                    <h2>Settings</h2>
+                    @if (SelectedElement is not null)
+                    {
+                        <span>@EditorComponentCatalog.Get(SelectedElement.Type).Name</span>
+                    }
+                    <button type="button" class="editor-panel-heading-action" title="Hide Settings panel" @onclick="ToggleInspector">Hide</button>
+                </div>
+
+                @if (SelectedElement is null)
+                {
+                    <div class="editor-inspector-empty">
+                        <strong>No element selected</strong>
+                        <span>Select an element on the canvas to edit its content and style.</span>
+                    </div>
+                }
+                else
+                {
+                    var selectedBox = SelectedBox;
+                    <div class="editor-selected-summary">
+                        <strong>@EditorComponentCatalog.Get(SelectedElement.Type).Name</strong>
+                        <code>@SelectedElement.Id</code>
+                    </div>
+                    <div class="editor-selected-toolbar">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CopySelectedElement">Copy</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(!CanPaste)" @onclick="PasteCopiedElement">Paste</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => DuplicateElement(SelectedElement.Id)">Duplicate</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" disabled="@(selectedBox?.IsLocked == true)" @onclick="() => DeleteElement(SelectedElement.Id)">Delete</button>
+                    </div>
+
+                    @if (selectedBox is not null)
+                    {
+                        <section class="editor-fieldset">
+                            <h3>Layout</h3>
+                            <div class="editor-layout-grid">
+                                @LayoutNumberField("X", "left", selectedBox.X)
+                                @LayoutNumberField("Y", "top", selectedBox.Y)
+                                @LayoutNumberField("W", "width", selectedBox.Width)
+                                @LayoutNumberField("H", "height", selectedBox.Height)
+                                @LayoutNumberField("Z", "zIndex", selectedBox.ZIndex)
+                                @LayoutNumberField("Snap", "snapDistance", snapDistance)
+                            </div>
+                            <div class="editor-toggle-row">
+                                <div class="editor-visibility-control" aria-label="Element visibility">
+                                    <span>Visibility</span>
+                                    <button type="button"
+                                            class="@(selectedBox.IsVisible ? "active" : "")"
+                                            @onclick="() => SetElementVisibility(true)">
+                                        Shown
+                                    </button>
+                                    <button type="button"
+                                            class="@(!selectedBox.IsVisible ? "active danger" : "")"
+                                            @onclick="() => SetElementVisibility(false)">
+                                        Hidden
+                                    </button>
+                                </div>
+                                <label>
+                                    <input type="checkbox" checked="@selectedBox.IsLocked" @onchange="args => SetElementLock(args.Value is true)" />
+                                    <span>Locked</span>
+                                </label>
+                            </div>
+                            <div class="editor-inspector-actions">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => ChangeSelectedZIndex(1)">Forward</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => ChangeSelectedZIndex(-1)">Backward</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="BringSelectedToFront">To front</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="SendSelectedToBack">To back</button>
+                            </div>
+                        </section>
+                    }
+
+                    <section class="editor-fieldset">
+                        <h3>Content</h3>
+                        @RenderContentFields(SelectedElement)
+                    </section>
+
+                    <section class="editor-fieldset">
+                        <h3>Style</h3>
+                        @StyleField("Background", "backgroundColor", "#ffffff", "color")
+                        @StyleField("Text color", "color", "#111827", "color")
+                        @StyleField("Padding", "padding", "24px")
+                        @StyleField("Margin", "margin", "")
+                        @StyleField("Radius", "borderRadius", "8px")
+                        @StyleField("Border", "border", "")
+                        @StyleField("Shadow", "boxShadow", "")
+                        @StyleField("Opacity", "opacity", "1", "number")
+                        @StyleField("Font size", "fontSize", "")
+                        @StyleField("Font family", "fontFamily", "")
+                        @StyleSelect("Weight", "fontWeight", ["normal", "500", "600", "700"])
+                        @StyleField("Line height", "lineHeight", "")
+                        @StyleSelect("Alignment", "textAlign", ["left", "center", "right"])
+                    </section>
+
+                    <details class="editor-advanced">
+                        <summary>Advanced JSON</summary>
+                        <label>Props JSON</label>
+                        <textarea class="form-control font-monospace" rows="8" @bind="propsJson"></textarea>
+                        <label>Styles JSON</label>
+                        <textarea class="form-control font-monospace" rows="6" @bind="stylesJson"></textarea>
+                        <button type="button" class="btn btn-outline-primary w-100 mt-2" @onclick="ApplyJson">Apply JSON</button>
+                    </details>
+                }
+            </div>
+        </aside>
+    </div>
+</div>
+
+@code {
+    [Parameter] public Guid StoreId { get; set; }
+    [Parameter] public Guid PageId { get; set; }
+
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    private readonly Stack<string> undoStack = new();
+    private readonly Stack<string> redoStack = new();
+    private readonly Dictionary<string, EditorElementBox> liveBoxes = [];
+    private PageLayoutDocument pageLayout = new();
+    private IReadOnlyCollection<PageDto>? sitePages;
+    private PageDto? currentPage;
+    private StoreDto? currentStore;
+    private ElementReference canvasRef;
+    private EditorCanvasRect canvasRect = new() { Width = EditorGeometry.DefaultCanvasWidth, Height = EditorGeometry.DefaultCanvasHeight };
+    private bool canvasRectMeasured;
+    private EditorInteractionState? activeInteraction;
+    private IReadOnlyList<EditorGuide> alignmentGuides = [];
+    private string? selectedElementId;
+    private string? draggedComponentType;
+    private string? draggedElementId;
+    private EditorDropTarget? activeDropTarget;
+    private string? activeLiveEditKey;
+    private string propsJson = "{}";
+    private string stylesJson = "{}";
+    private string searchText = string.Empty;
+    private string activeLeftPanel = "add";
+    private string? copiedElementJson;
+    private string deviceMode = "desktop";
+    private string? error;
+    private string? message;
+    private int snapDistance = EditorGeometry.DefaultSnapDistance;
+    private int zoomPercent = 100;
+    private double paletteDropX;
+    private double paletteDropY;
+    private bool leftPanelOpen;
+    private bool inspectorOpen;
+    private bool showHiddenElements;
+    private bool showCanvasDropIndicator;
+    private bool busy;
+    private bool hasChanges;
+
+    private PageSectionDefinition? SelectedElement => selectedElementId is null ? null : FindElement(selectedElementId);
+    private EditorElementBox? SelectedBox => selectedElementId is null ? null : GetElementBox(selectedElementId);
+    private double CanvasHeight => Math.Max(EditorGeometry.DefaultCanvasHeight, pageLayout.Sections.Select((section, index) =>
+    {
+        var box = liveBoxes.TryGetValue(section.Id, out var live) ? live : EditorGeometry.GetBox(section, index);
+        return box.Y + box.Height + 96;
+    }).DefaultIfEmpty(EditorGeometry.DefaultCanvasHeight).Max());
+    private double ZoomScale => Math.Max(.5, zoomPercent / 100d);
+    private double DefaultCanvasModelWidth => deviceMode switch
+    {
+        "mobile" => 430,
+        "tablet" => 820,
+        _ => EditorGeometry.DefaultCanvasWidth
+    };
+    private double CanvasModelWidth => canvasRectMeasured ? canvasRect.Width / ZoomScale : DefaultCanvasModelWidth;
+    private double CanvasModelHeight => canvasRectMeasured ? canvasRect.Height / ZoomScale : CanvasHeight;
+    private double EffectiveCanvasHeight => Math.Max(CanvasModelHeight, CanvasHeight);
+    private bool CanUndo => undoStack.Count > 0;
+    private bool CanRedo => redoStack.Count > 0;
+    private bool CanPaste => !string.IsNullOrWhiteSpace(copiedElementJson);
+    private bool HasNavigation => pageLayout.Sections.Any(section => section.Type.Equals("navBar", StringComparison.OrdinalIgnoreCase));
+    private string CanvasStyle => string.Create(CultureInfo.InvariantCulture, $"min-height:{EditorGeometry.FormatPixel(CanvasHeight)};transform:scale({ZoomScale:0.##});");
+    private string? PreviewUrl => currentStore is null || currentPage is null
+        ? null
+        : currentPage.IsHomePage
+            ? $"/store/{currentStore.Slug}"
+            : $"/store/{currentStore.Slug}/pages/{currentPage.Slug}";
+    private static readonly HashSet<string> NumericPropKeys = new(StringComparer.OrdinalIgnoreCase) { "columns", "limit" };
+    private static readonly HashSet<string> CommaSeparatedArrayPropKeys = new(StringComparer.OrdinalIgnoreCase) { "links" };
+    private const string DefaultElementType = "text";
+    private IEnumerable<EditorComponentDefinition> FilteredComponents => string.IsNullOrWhiteSpace(searchText)
+        ? EditorComponentCatalog.All
+        : EditorComponentCatalog.All.Where(component =>
+            component.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+            component.Type.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+            component.Description.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+    private IEnumerable<string> FilteredGroups => FilteredComponents.Select(component => component.Group).Distinct();
+    private string LeftPanelTitle => activeLeftPanel switch
+    {
+        "layers" => "Layers",
+        "pages" => "Pages",
+        _ => "Add elements"
+    };
+
+    private bool IsLeftPanel(string panel) => activeLeftPanel.Equals(panel, StringComparison.OrdinalIgnoreCase);
+
+    private void ShowAddPanel() => activeLeftPanel = "add";
+
+    private void ShowLayersPanel() => activeLeftPanel = "layers";
+
+    private void ShowPagesPanel() => activeLeftPanel = "pages";
+
+    private void ToggleLeftPanel() => leftPanelOpen = !leftPanelOpen;
+
+    private void ToggleInspector() => inspectorOpen = !inspectorOpen;
+
+    private void ZoomOut() => SetZoom(zoomPercent - 10);
+
+    private void ZoomIn() => SetZoom(zoomPercent + 10);
+
+    private void ResetZoom() => SetZoom(100);
+
+    private void SetZoom(int value)
+    {
+        zoomPercent = Math.Clamp(value, 50, 150);
+        canvasRectMeasured = false;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        error = null;
+        try
+        {
+            var latest = await Api.GetAsync<PageLayoutDto?>($"api/stores/{StoreId}/pages/{PageId}/layout");
+            sitePages = await Api.GetAsync<IReadOnlyCollection<PageDto>>($"api/stores/{StoreId}/pages") ?? [];
+            currentPage = sitePages.SingleOrDefault(page => page.Id == PageId);
+            currentStore = await Api.GetAsync<StoreDto>($"api/stores/{StoreId}");
+            pageLayout = latest?.Layout ?? new PageLayoutDocument { PageId = PageId.ToString("n") };
+            NormalizeLayout();
+            selectedElementId = pageLayout.Sections.FirstOrDefault()?.Id;
+            SyncInspectorJson();
+            hasChanges = false;
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private async Task StartComponentDrag(string? type)
+    {
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            draggedComponentType = null;
+            error = "That element type is not available.";
+            return;
+        }
+
+        draggedComponentType = type;
+        draggedElementId = null;
+        canvasRect = await GetCanvasRectAsync();
+        showCanvasDropIndicator = false;
+        message = null;
+    }
+
+    private void StartElementDrag(string elementId)
+    {
+        draggedElementId = elementId;
+        draggedComponentType = null;
+        message = null;
+    }
+
+    private void ClearDrag()
+    {
+        draggedComponentType = null;
+        draggedElementId = null;
+        activeDropTarget = null;
+        showCanvasDropIndicator = false;
+    }
+
+    private void SetActiveDropTarget(EditorDropTarget? target)
+    {
+        activeDropTarget = target is not null && CanDrop(target) ? target : null;
+    }
+
+    private void HandleDrop(EditorDropTarget target)
+    {
+        if (!CanDrop(target))
+        {
+            ClearDrag();
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(draggedComponentType))
+        {
+            InsertElement(draggedComponentType, target.ParentId, target.Index);
+        }
+        else if (!string.IsNullOrWhiteSpace(draggedElementId))
+        {
+            MoveElementTo(draggedElementId, target.ParentId, target.Index);
+        }
+
+        ClearDrag();
+    }
+
+    private void HandleCanvasDragEnter()
+    {
+        showCanvasDropIndicator = draggedComponentType is not null;
+    }
+
+    private void HandleCanvasDragOver(DragEventArgs args)
+    {
+        if (draggedComponentType is null)
+        {
+            return;
+        }
+
+        SetActiveDropTarget(null);
+        UpdatePaletteDrop(args.ClientX, args.ClientY);
+        showCanvasDropIndicator = true;
+    }
+
+    private void HandleCanvasDragLeave()
+    {
+        showCanvasDropIndicator = false;
+    }
+
+    private async Task HandleCanvasDrop(DragEventArgs args)
+    {
+        if (draggedComponentType is null)
+        {
+            return;
+        }
+
+        canvasRect = await GetCanvasRectAsync();
+        UpdatePaletteDrop(args.ClientX, args.ClientY);
+        InsertElement(draggedComponentType, null, pageLayout.Sections.Count, paletteDropX, paletteDropY);
+        ClearDrag();
+    }
+
+    private async Task BeginElementInteraction(EditorInteractionRequest request)
+    {
+        var context = FindElementContext(request.ElementId);
+        if (context is null)
+        {
+            return;
+        }
+
+        var box = EditorGeometry.GetBox(context.Value.Node, context.Value.Index, context.Value.Depth);
+        if (box.IsLocked)
+        {
+            SelectElement(request.ElementId);
+            return;
+        }
+
+        SelectElement(request.ElementId);
+        canvasRect = await GetCanvasRectAsync();
+        activeInteraction = new EditorInteractionState
+        {
+            ElementId = request.ElementId,
+            Kind = request.Kind,
+            Handle = request.Handle,
+            PointerId = request.PointerId,
+            StartClientX = request.ClientX,
+            StartClientY = request.ClientY,
+            StartBox = box,
+            CurrentBox = box,
+            PreserveAspectRatio = request.PreserveAspectRatio && IsAspectRatioResizeElement(context.Value.Node)
+        };
+        liveBoxes[request.ElementId] = box;
+        alignmentGuides = [];
+        await CapturePointerAsync(request.PointerId);
+    }
+
+    private void HandlePointerMove(PointerEventArgs args)
+    {
+        if (activeInteraction is null)
+        {
+            return;
+        }
+
+        var deltaX = (args.ClientX - activeInteraction.StartClientX) / ZoomScale;
+        var deltaY = (args.ClientY - activeInteraction.StartClientY) / ZoomScale;
+        var proposed = activeInteraction.Kind == EditorInteractionKind.Resize
+            ? ResizeBox(activeInteraction.StartBox, activeInteraction.Handle ?? string.Empty, deltaX, deltaY, activeInteraction.PreserveAspectRatio)
+            : activeInteraction.StartBox with
+            {
+                X = activeInteraction.StartBox.X + deltaX,
+                Y = activeInteraction.StartBox.Y + deltaY
+            };
+
+        proposed = EditorGeometry.ClampToCanvas(proposed, CanvasModelWidth, EffectiveCanvasHeight);
+        var snap = EditorGeometry.Snap(
+            proposed,
+            EnumerateEditorBoxes(pageLayout.Sections).Where(box => box.ElementId != activeInteraction.ElementId && box.IsVisible),
+            CanvasModelWidth,
+            EffectiveCanvasHeight,
+            snapDistance,
+            activeInteraction.Kind == EditorInteractionKind.Resize ? activeInteraction.Handle : null);
+
+        if (!activeInteraction.HasMoved && HasMeaningfulMovement(activeInteraction.StartBox, snap.Box))
+        {
+            PushHistory();
+            activeInteraction.HasMoved = true;
+        }
+
+        if (!activeInteraction.HasMoved)
+        {
+            return;
+        }
+
+        activeInteraction.CurrentBox = snap.Box;
+        liveBoxes[activeInteraction.ElementId] = snap.Box;
+        alignmentGuides = snap.Guides;
+    }
+
+    private async Task HandlePointerUp(PointerEventArgs args)
+    {
+        await CompletePointerInteraction(args.PointerId);
+    }
+
+    private async Task HandlePointerCancel(PointerEventArgs args)
+    {
+        await CompletePointerInteraction(args.PointerId);
+    }
+
+    private async Task CompletePointerInteraction(long pointerId)
+    {
+        if (activeInteraction is null)
+        {
+            return;
+        }
+
+        if (activeInteraction.HasMoved)
+        {
+            if (FindElement(activeInteraction.ElementId) is { } element &&
+                liveBoxes.TryGetValue(activeInteraction.ElementId, out var finalBox))
+            {
+                EditorGeometry.ApplyBox(element, finalBox);
+                MarkDirty();
+            }
+
+            SyncInspectorJson();
+        }
+
+        liveBoxes.Remove(activeInteraction.ElementId);
+        alignmentGuides = [];
+        activeInteraction = null;
+        await ReleasePointerAsync(pointerId);
+    }
+
+    private RenderFragment DropZone(EditorDropTarget target, bool large) => @<div class="editor-drop-zone root @(large ? "large" : "") @(IsActiveDrop(target) ? "active" : "")"
+        @ondragenter="() => SetActiveDropTarget(target)"
+        @ondragover:preventDefault="true"
+        @ondrop:stopPropagation="true"
+        @ondrop="() => HandleDrop(target)">
+    </div>;
+
+    private RenderFragment RenderLayerTree(IReadOnlyList<PageSectionDefinition> elements, int depth) => @<div class="editor-layer-list">
+        @for (var i = 0; i < elements.Count; i++)
+        {
+            var element = elements[i];
+            var definition = EditorComponentCatalog.Get(element.Type);
+            var box = GetElementBox(element.Id) ?? EditorGeometry.GetBox(element, i, depth);
+            <div class="editor-layer-row @(selectedElementId == element.Id ? "active" : "") @(box.IsVisible ? "" : "is-hidden") @(box.IsLocked ? "is-locked" : "")"
+                 style="--layer-depth:@depth">
+                <button type="button" class="editor-layer-main" @onclick="() => SelectElement(element.Id)">
+                    <span>@definition.Icon</span>
+                    <strong>@definition.Name</strong>
+                    <small>@(box.IsVisible ? $"{Math.Round(box.X)}, {Math.Round(box.Y)}" : "Hidden")</small>
+                </button>
+                <div class="editor-layer-actions">
+                    <button type="button" title="Toggle visibility" @onclick="() => ToggleElementVisibility(element.Id)">@(box.IsVisible ? "Hide" : "Show")</button>
+                    <button type="button" title="Toggle lock" @onclick="() => ToggleElementLock(element.Id)">@(box.IsLocked ? "Unlock" : "Lock")</button>
+                    <button type="button" title="Duplicate" @onclick="() => DuplicateElement(element.Id)">Copy</button>
+                    <button type="button" title="Delete" disabled="@box.IsLocked" @onclick="() => DeleteElement(element.Id)">Del</button>
+                </div>
+            </div>
+            @if (element.Children.Count > 0)
+            {
+                @RenderLayerTree(element.Children, depth + 1)
+            }
+        }
+    </div>;
+
+    private bool IsActiveDrop(EditorDropTarget target)
+    {
+        return activeDropTarget is not null &&
+               activeDropTarget.ParentId == target.ParentId &&
+               activeDropTarget.Index == target.Index;
+    }
+
+    private bool CanDrop(EditorDropTarget target)
+    {
+        if (target.ParentId is not null)
+        {
+            var parent = FindElement(target.ParentId);
+            if (parent is null || !EditorComponentCatalog.CanContainChildren(parent.Type))
+            {
+                return false;
+            }
+        }
+
+        if (draggedElementId is null)
+        {
+            return true;
+        }
+
+        if (draggedElementId == target.ParentId)
+        {
+            return false;
+        }
+
+        return target.ParentId is null || !IsDescendantOf(target.ParentId, draggedElementId);
+    }
+
+    private void InsertElement(string? type, string? parentId, int index)
+    {
+        InsertElement(type, parentId, index, null, null);
+    }
+
+    private void InsertElement(string? type, string? parentId, int index, double? x, double? y)
+    {
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            error = "Choose an element before adding it to the canvas.";
+            return;
+        }
+
+        var target = GetChildren(parentId);
+        if (target is null)
+        {
+            return;
+        }
+
+        PushHistory();
+        var element = CreateElement(type);
+        index = Math.Clamp(index, 0, target.Count);
+        var defaultBox = EditorGeometry.GetBox(element, index, parentId is null ? 0 : 1);
+        var placedBox = defaultBox with
+        {
+            X = Math.Max(0, x ?? 24),
+            Y = Math.Max(0, y ?? NextAvailableY(parentId)),
+            ZIndex = NextZIndex()
+        };
+        EditorGeometry.ApplyBox(element, EditorGeometry.ClampToCanvas(
+            placedBox,
+            parentId is null ? CanvasModelWidth : defaultBox.Width + placedBox.X,
+            Math.Max(CanvasHeight, placedBox.Y + placedBox.Height + 96)));
+        target.Insert(index, element);
+        NormalizeLayout();
+        SelectElement(element.Id);
+        MarkDirty();
+    }
+
+    private void MoveElement(EditorMoveRequest request)
+    {
+        var context = FindElementContext(request.ElementId);
+        if (context is null)
+        {
+            return;
+        }
+
+        var targetIndex = request.Offset < 0 ? context.Value.Index - 1 : context.Value.Index + 2;
+        MoveElementTo(request.ElementId, context.Value.ParentId, targetIndex);
+    }
+
+    private void MoveElementTo(string elementId, string? parentId, int targetIndex)
+    {
+        var source = FindElementContext(elementId);
+        var target = GetChildren(parentId);
+        if (source is null || target is null)
+        {
+            return;
+        }
+
+        if (source.Value.ParentId == parentId && (targetIndex == source.Value.Index || targetIndex == source.Value.Index + 1))
+        {
+            return;
+        }
+
+        PushHistory();
+        var element = source.Value.Siblings[source.Value.Index];
+        source.Value.Siblings.RemoveAt(source.Value.Index);
+        if (ReferenceEquals(source.Value.Siblings, target) && targetIndex > source.Value.Index)
+        {
+            targetIndex--;
+        }
+
+        targetIndex = Math.Clamp(targetIndex, 0, target.Count);
+        target.Insert(targetIndex, element);
+        NormalizeLayout();
+        SelectElement(element.Id);
+        MarkDirty();
+    }
+
+    private void DuplicateElement(string elementId)
+    {
+        var context = FindElementContext(elementId);
+        if (context is null)
+        {
+            return;
+        }
+
+        PushHistory();
+        var copy = CloneElement(context.Value.Node);
+        var copyBox = EditorGeometry.GetBox(copy, context.Value.Index + 1, context.Value.Depth) with
+        {
+            X = EditorGeometry.GetBox(context.Value.Node, context.Value.Index, context.Value.Depth).X + 24,
+            Y = EditorGeometry.GetBox(context.Value.Node, context.Value.Index, context.Value.Depth).Y + 24,
+            ZIndex = NextZIndex()
+        };
+        EditorGeometry.ApplyBox(copy, EditorGeometry.ClampToCanvas(copyBox, CanvasModelWidth, Math.Max(CanvasHeight, copyBox.Y + copyBox.Height + 96)));
+        context.Value.Siblings.Insert(context.Value.Index + 1, copy);
+        NormalizeLayout();
+        SelectElement(copy.Id);
+        MarkDirty();
+    }
+
+    private void DeleteElement(string elementId)
+    {
+        var context = FindElementContext(elementId);
+        if (context is null)
+        {
+            return;
+        }
+
+        PushHistory();
+        context.Value.Siblings.RemoveAt(context.Value.Index);
+        NormalizeLayout();
+        selectedElementId = context.Value.Siblings.ElementAtOrDefault(Math.Min(context.Value.Index, context.Value.Siblings.Count - 1))?.Id
+            ?? pageLayout.Sections.FirstOrDefault()?.Id;
+        SyncInspectorJson();
+        MarkDirty();
+    }
+
+    private void CopySelectedElement()
+    {
+        if (SelectedElement is null)
+        {
+            return;
+        }
+
+        copiedElementJson = JsonSerializer.Serialize(SelectedElement, JsonOptions);
+        message = "Element copied.";
+    }
+
+    private void PasteCopiedElement()
+    {
+        if (string.IsNullOrWhiteSpace(copiedElementJson))
+        {
+            return;
+        }
+
+        error = null;
+        try
+        {
+            var source = JsonSerializer.Deserialize<PageSectionDefinition>(copiedElementJson, JsonOptions);
+            if (source is null)
+            {
+                return;
+            }
+
+            var selectedContext = selectedElementId is null ? null : FindElementContext(selectedElementId);
+            var parentId = selectedContext?.ParentId;
+            var target = GetChildren(parentId) ?? pageLayout.Sections;
+            var insertIndex = selectedContext is null ? target.Count : selectedContext.Value.Index + 1;
+            var copy = CloneElement(source);
+            var sourceBox = selectedContext is null
+                ? EditorGeometry.GetBox(copy, insertIndex, parentId is null ? 0 : 1)
+                : EditorGeometry.GetBox(selectedContext.Value.Node, selectedContext.Value.Index, selectedContext.Value.Depth);
+            var pastedBox = sourceBox with
+            {
+                ElementId = copy.Id,
+                X = sourceBox.X + 24,
+                Y = sourceBox.Y + 24,
+                ZIndex = NextZIndex(),
+                IsLocked = false
+            };
+
+            PushHistory();
+            EditorGeometry.ApplyBox(copy, EditorGeometry.ClampToCanvas(pastedBox, CanvasModelWidth, Math.Max(CanvasHeight, pastedBox.Y + pastedBox.Height + 96)));
+            target.Insert(Math.Clamp(insertIndex, 0, target.Count), copy);
+            NormalizeLayout();
+            SelectElement(copy.Id);
+            MarkDirty();
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private void SelectElement(string elementId)
+    {
+        EndLiveEdit();
+        selectedElementId = elementId;
+        SyncInspectorJson();
+        _ = FocusCanvasAsync();
+    }
+
+    private void ClearSelection()
+    {
+        EndLiveEdit();
+        selectedElementId = null;
+        SyncInspectorJson();
+    }
+
+    private void HandleEditorKeyDown(KeyboardEventArgs args)
+    {
+        var hasCommandKey = args.CtrlKey || args.MetaKey;
+        if (hasCommandKey && args.Key.Equals("z", StringComparison.OrdinalIgnoreCase))
+        {
+            if (args.ShiftKey)
+            {
+                Redo();
+            }
+            else
+            {
+                Undo();
+            }
+
+            return;
+        }
+
+        if (hasCommandKey && args.Key.Equals("y", StringComparison.OrdinalIgnoreCase))
+        {
+            Redo();
+            return;
+        }
+
+        if (hasCommandKey && args.Key.Equals("c", StringComparison.OrdinalIgnoreCase))
+        {
+            CopySelectedElement();
+            return;
+        }
+
+        if (hasCommandKey && args.Key.Equals("v", StringComparison.OrdinalIgnoreCase))
+        {
+            PasteCopiedElement();
+            return;
+        }
+
+        if (hasCommandKey && args.Key.Equals("d", StringComparison.OrdinalIgnoreCase) && selectedElementId is not null)
+        {
+            DuplicateElement(selectedElementId);
+            return;
+        }
+
+        if (args.Key == "Escape")
+        {
+            ClearSelection();
+            return;
+        }
+
+        if ((args.Key == "Delete" || args.Key == "Backspace") && selectedElementId is not null)
+        {
+            DeleteSelectedElement();
+            return;
+        }
+
+        if (selectedElementId is not null && args.Key.StartsWith("Arrow", StringComparison.OrdinalIgnoreCase))
+        {
+            var step = args.ShiftKey ? 10 : 1;
+            var (deltaX, deltaY) = args.Key switch
+            {
+                "ArrowLeft" => (-step, 0),
+                "ArrowRight" => (step, 0),
+                "ArrowUp" => (0, -step),
+                "ArrowDown" => (0, step),
+                _ => (0, 0)
+            };
+
+            if (deltaX != 0 || deltaY != 0)
+            {
+                NudgeSelectedElement(deltaX, deltaY);
+            }
+        }
+    }
+
+    private void DeleteSelectedElement()
+    {
+        if (selectedElementId is null || SelectedBox?.IsLocked == true)
+        {
+            return;
+        }
+
+        DeleteElement(selectedElementId);
+    }
+
+    private void SetDesktop() => SetDeviceMode("desktop");
+
+    private void SetTablet() => SetDeviceMode("tablet");
+
+    private void SetMobile() => SetDeviceMode("mobile");
+
+    private void SetDeviceMode(string mode)
+    {
+        deviceMode = mode;
+        canvasRectMeasured = false;
+    }
+
+    private void AddStoreNavigation()
+    {
+        if (HasNavigation)
+        {
+            return;
+        }
+
+        InsertElement("navBar", null, 0);
+        message = "Store navigation added.";
+    }
+
+    private void Undo()
+    {
+        if (undoStack.Count == 0)
+        {
+            return;
+        }
+
+        redoStack.Push(Snapshot());
+        ApplySnapshot(undoStack.Pop());
+        MarkDirty();
+    }
+
+    private void Redo()
+    {
+        if (redoStack.Count == 0)
+        {
+            return;
+        }
+
+        undoStack.Push(Snapshot());
+        ApplySnapshot(redoStack.Pop());
+        MarkDirty();
+    }
+
+    private async Task Save(bool publish)
+    {
+        busy = true;
+        error = null;
+        message = null;
+        NormalizeLayout();
+        pageLayout.PageId = PageId.ToString("n");
+
+        var request = new SavePageLayoutRequest
+        {
+            Publish = publish,
+            LayoutJson = JsonSerializer.Serialize(pageLayout, JsonOptions)
+        };
+
+        try
+        {
+            var saved = await Api.PostAsync<SavePageLayoutRequest, PageLayoutDto>($"api/stores/{StoreId}/pages/{PageId}/layout", request);
+            if (saved?.Layout is not null)
+            {
+                pageLayout = saved.Layout;
+                NormalizeLayout();
+            }
+
+            undoStack.Clear();
+            redoStack.Clear();
+            hasChanges = false;
+            SyncInspectorJson();
+            message = publish ? $"Published version {saved?.Version}." : $"Saved draft version {saved?.Version}.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private RenderFragment RenderContentFields(PageSectionDefinition element)
+    {
+        return element.Type switch
+        {
+            "hero" => @<div>
+                @PropField("Title", "title", "Welcome to our store")
+                @PropArea("Subtitle", "subtitle", "Best products online")
+                @PropField("Image URL", "imageUrl", "https://placehold.co/1600x700?text=Hero")
+                @PropField("Button text", "buttonText", "Shop now")
+                @PropField("Button URL", "buttonUrl", "/products")
+            </div>,
+            "text" => @<div>
+                @PropField("Heading", "heading", "Section heading")
+                @PropArea("Text", "text", "Write section copy here.")
+            </div>,
+            "image" => @<div>
+                @PropField("Image URL", "imageUrl", "https://placehold.co/1400x700?text=Image")
+                @PropField("Alt text", "altText", "")
+                @PropSelect("Image fit", "objectFit", ["cover", "contain", "fill", "none"])
+                @PropField("Caption", "caption", "")
+                @PropField("Overlay text", "overlayText", "")
+                @PropSelect("Overlay position", "overlayPosition", ["center", "top-left", "top-right", "bottom-left", "bottom-right"])
+                @PropField("Overlay color", "overlayColor", "#ffffff", "color")
+                @PropField("Overlay background", "overlayBackground", "rgba(15,23,42,.45)")
+            </div>,
+            "logo" => @<div>
+                @PropCheckbox("Use store logo", "useStoreLogo", true)
+                @PropField("Logo URL", "logoUrl", "")
+                @PropField("Alt text", "altText", "")
+                @PropSelect("Fit", "objectFit", ["contain", "cover", "fill", "none"])
+                @PropSelect("Alignment", "align", ["center", "start", "end"])
+                @PropCheckbox("Show brand text", "showBrandText")
+                @PropField("Brand text", "brandText", "Store")
+                @PropField("Link URL", "linkUrl", "/")
+            </div>,
+            "button" => @<div>
+                @PropField("Text", "text", "Shop now")
+                @PropField("URL", "url", "/products")
+                @PropSelect("Alignment", "align", ["start", "center", "end"])
+                @PropField("Background", "buttonBackground", "#0f5ea8", "color")
+                @PropField("Text color", "buttonColor", "#ffffff", "color")
+                @PropField("Hover background", "hoverBackground", "#0b4d89", "color")
+                @PropField("Radius", "buttonRadius", "8px")
+            </div>,
+            "banner" => @<div>
+                @PropField("Title", "title", "Limited offer")
+                @PropArea("Subtitle", "subtitle", "Promotional copy")
+                @PropField("Button text", "buttonText", "Browse")
+                @PropField("Button URL", "buttonUrl", "/products")
+            </div>,
+            "navBar" => @<div>
+                @PropCheckbox("Use store name", "useStoreName", true)
+                @PropCheckbox("Auto page links", "autoLinks", true)
+                @PropCheckbox("Show logo", "showLogo", true)
+                @PropField("Logo URL", "logoUrl", "")
+                @PropField("Logo alt text", "logoAlt", "")
+                @PropField("Logo size", "logoSize", "42px")
+                @PropSelect("Logo position", "logoPlacement", ["beforeName", "afterName", "aboveName"])
+                @PropCheckbox("Hide brand text", "hideBrandText")
+                @PropField("Brand", "brand", "Brand")
+                @PropSelect("Logo/name position", "brandPosition", ["left", "center", "right"])
+                @PropSelect("Links position", "linksPosition", ["center", "left", "right"])
+                @PropSelect("Button position", "ctaPosition", ["right", "center", "left"])
+                @PropSelect("Navigation layout", "navLayout", ["spread", "left", "center", "right"])
+                @PropSelect("Navigation position", "navPosition", ["normal", "sticky", "fixed"])
+                @PropSelect("Navigation width", "navWidth", ["contained", "full"])
+                @PropSelect("Links alignment", "linksAlignment", ["center", "start", "end"])
+                @PropField("Top offset", "navTop", "0px")
+                @PropField("Links", "links", "Home, Services, Contact")
+                @PropField("CTA text", "ctaText", "Get started")
+                @PropField("CTA URL", "ctaUrl", "#")
+            </div>,
+            "featureGrid" => @<div>
+                @PropField("Heading", "heading", "Features")
+                @PropArea("Subtitle", "subtitle", "What makes this page useful.")
+                <div class="text-muted small">Edit feature cards in Advanced JSON.</div>
+            </div>,
+            "testimonials" => @<div>
+                @PropField("Heading", "heading", "Testimonials")
+                <div class="text-muted small">Edit quotes in Advanced JSON.</div>
+            </div>,
+            "pricing" => @<div>
+                @PropField("Heading", "heading", "Pricing")
+                <div class="text-muted small">Edit plans and feature lists in Advanced JSON.</div>
+            </div>,
+            "footer" => @<div>
+                @PropField("Brand", "brand", "Brand")
+                @PropArea("Text", "text", "Footer text.")
+                @PropField("Links", "links", "Privacy, Contact, Social")
+            </div>,
+            "productGrid" or "featuredProducts" => @<div>
+                @PropField("Heading", "heading", "Products")
+                @PropSelect("Layout", "layout", ["grid", "list"])
+                @PropField("Columns", "columns", "4", "number")
+                @PropField("Limit", "limit", "8", "number")
+                @PropField("Spacing", "gap", "16px")
+                @PropSelect("Image ratio", "imageRatio", ["4 / 3", "1 / 1", "16 / 9", "3 / 4"])
+                @PropCheckbox("Show title", "showTitle", true)
+                @PropCheckbox("Show price", "showPrice", true)
+                @PropCheckbox("Show description", "showDescription")
+                @PropCheckbox("Show button", "showButton", true)
+                @PropField("Button text", "buttonText", "Add to cart")
+                @PropSelect("Sort", "sort", ["name", "priceAsc", "priceDesc"])
+            </div>,
+            "categoryGrid" => @<div>
+                @PropField("Heading", "heading", "Categories")
+                @PropField("Columns", "columns", "4", "number")
+            </div>,
+            "container" => @<div>
+                @PropField("Title", "title", "")
+            </div>,
+            "columns" => @<div>
+                @PropField("Heading", "heading", "")
+                @PropSelect("Columns", "columns", ["1", "2", "3", "4"])
+            </div>,
+            "spacer" => @<div>
+                @PropField("Height", "height", "48px")
+            </div>,
+            "input" => @<div>
+                @PropField("Label", "label", "Field label")
+                @PropField("Placeholder", "placeholder", "")
+                @PropSelect("Input type", "inputType", ["text", "email", "tel", "number", "url"])
+                @PropCheckbox("Required", "required")
+            </div>,
+            "form" => @<div>
+                @PropField("Title", "title", "Contact us")
+                @PropField("Button text", "buttonText", "Submit")
+            </div>,
+            "customHtml" => @<div>
+                @PropArea("HTML", "html", "<div class=\"alert alert-light border\">Custom HTML block</div>")
+            </div>,
+            _ => @<div class="text-muted small">No editable fields for this element.</div>
+        };
+    }
+
+    private RenderFragment PropField(string label, string key, string fallback, string type = "text") => @<div class="editor-field">
+        <label>@label</label>
+        <input class="form-control form-control-sm"
+               type="@type"
+               value="@GetProp(key, fallback)"
+               @oninput="args => SetProp(key, args.Value?.ToString() ?? string.Empty)"
+               @onblur="EndLiveEdit" />
+    </div>;
+
+    private RenderFragment PropArea(string label, string key, string fallback) => @<div class="editor-field">
+        <label>@label</label>
+        <textarea class="form-control form-control-sm"
+                  rows="4"
+                  value="@GetProp(key, fallback)"
+                  @oninput="args => SetProp(key, args.Value?.ToString() ?? string.Empty)"
+                  @onblur="EndLiveEdit"></textarea>
+    </div>;
+
+    private RenderFragment PropSelect(string label, string key, IReadOnlyCollection<string> options) => @<div class="editor-field">
+        <label>@label</label>
+        <select class="form-select form-select-sm" value="@GetProp(key, options.FirstOrDefault() ?? string.Empty)" @onchange="args => SetProp(key, args.Value?.ToString() ?? string.Empty)">
+            @foreach (var option in options)
+            {
+                <option value="@option">@option</option>
+            }
+        </select>
+    </div>;
+
+    private RenderFragment PropCheckbox(string label, string key, bool fallback = false) => @<div class="editor-field editor-check-field">
+        <label>
+            <input type="checkbox" checked="@GetPropBool(key, fallback)" @onchange="args => SetProp(key, args.Value is true)" />
+            <span>@label</span>
+        </label>
+    </div>;
+
+    private RenderFragment StyleField(string label, string key, string fallback, string type = "text") => @<div class="editor-field">
+        <label>@label</label>
+        <input class="form-control form-control-sm"
+               type="@type"
+               value="@GetStyle(key, fallback)"
+               @oninput="args => SetStyle(key, args.Value?.ToString() ?? string.Empty)"
+               @onblur="EndLiveEdit" />
+    </div>;
+
+    private RenderFragment StyleSelect(string label, string key, IReadOnlyCollection<string> options) => @<div class="editor-field">
+        <label>@label</label>
+        <select class="form-select form-select-sm" value="@GetStyle(key, options.FirstOrDefault() ?? string.Empty)" @onchange="args => SetStyle(key, args.Value?.ToString() ?? string.Empty)">
+            @foreach (var option in options)
+            {
+                <option value="@option">@option</option>
+            }
+        </select>
+    </div>;
+
+    private RenderFragment LayoutNumberField(string label, string key, double value) => @<div class="editor-field">
+        <label>@label</label>
+        <input class="form-control form-control-sm" type="number" value="@Math.Round(value)" @onchange="args => SetLayoutNumber(key, args.Value?.ToString() ?? string.Empty)" />
+    </div>;
+
+    private string GetProp(string key, string fallback = "")
+    {
+        if (SelectedElement?.Props.TryGetPropertyValue(key, out var node) != true)
+        {
+            return fallback;
+        }
+
+        if (node is JsonValue value)
+        {
+            return value.ToString();
+        }
+
+        if (node is JsonArray array)
+        {
+            return string.Join(", ", array
+                .Select(item =>
+                {
+                    if (item is JsonValue itemValue && itemValue.TryGetValue<string>(out var text))
+                    {
+                        return text;
+                    }
+
+                    return item is JsonObject itemObject
+                        ? JsonProps.GetString(itemObject, "text")
+                        : null;
+                })
+                .Where(text => !string.IsNullOrWhiteSpace(text)));
+        }
+
+        return fallback;
+    }
+
+    private bool GetPropBool(string key, bool fallback = false)
+    {
+        return SelectedElement?.Props.TryGetPropertyValue(key, out var node) == true &&
+               node is JsonValue value &&
+               value.TryGetValue<bool>(out var boolean)
+            ? boolean
+            : fallback;
+    }
+
+    private string GetStyle(string key, string fallback = "")
+    {
+        return SelectedElement?.Styles.TryGetPropertyValue(key, out var node) == true && node is JsonValue value
+            ? value.ToString()
+            : fallback;
+    }
+
+    private void CaptureLiveEdit(string key)
+    {
+        if (activeLiveEditKey == key)
+        {
+            return;
+        }
+
+        PushHistory();
+        activeLiveEditKey = key;
+    }
+
+    private void EndLiveEdit()
+    {
+        activeLiveEditKey = null;
+    }
+
+    private void SetProp(string key, object value)
+    {
+        if (SelectedElement is null)
+        {
+            return;
+        }
+
+        CaptureLiveEdit($"prop:{SelectedElement.Id}:{key}");
+        SelectedElement.Props[key] = value switch
+        {
+            bool boolean => JsonValue.Create(boolean),
+            string text when NumericPropKeys.Contains(key) && int.TryParse(text, out var number) => JsonValue.Create(number),
+            string text when CommaSeparatedArrayPropKeys.Contains(key) => new JsonArray(
+                text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(item => JsonValue.Create(item))
+                    .ToArray<JsonNode?>()),
+            _ => JsonValue.Create(value.ToString() ?? string.Empty)
+        };
+        SyncInspectorJson();
+        MarkDirty();
+    }
+
+    private void HandleInlineEdit(EditorInlineEditRequest request)
+    {
+        var element = FindElement(request.ElementId);
+        if (element is null)
+        {
+            return;
+        }
+
+        selectedElementId = request.ElementId;
+        CaptureLiveEdit($"prop:{request.ElementId}:{request.Key}");
+        element.Props[request.Key] = JsonValue.Create(request.Value);
+        SyncInspectorJson();
+        MarkDirty();
+    }
+
+    private void SetStyle(string key, string value)
+    {
+        if (SelectedElement is null)
+        {
+            return;
+        }
+
+        CaptureLiveEdit($"style:{SelectedElement.Id}:{key}");
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            SelectedElement.Styles.Remove(key);
+        }
+        else
+        {
+            SelectedElement.Styles[key] = value;
+        }
+
+        SyncInspectorJson();
+        MarkDirty();
+    }
+
+    private void SetLayoutNumber(string key, string value)
+    {
+        if (key.Equals("snapDistance", StringComparison.OrdinalIgnoreCase))
+        {
+            SetSnapDistance(value);
+            return;
+        }
+
+        if (SelectedElement is null || SelectedBox is not { } box)
+        {
+            return;
+        }
+
+        if (!double.TryParse(value, out var number))
+        {
+            return;
+        }
+
+        PushHistory();
+        var updated = key switch
+        {
+            "left" => box with { X = number },
+            "top" => box with { Y = number },
+            "width" => box with { Width = number },
+            "height" => box with { Height = number },
+            "zIndex" => box with { ZIndex = (int)Math.Round(number) },
+            _ => box
+        };
+
+        EditorGeometry.ApplyBox(SelectedElement, EditorGeometry.ClampToCanvas(updated, CanvasModelWidth, Math.Max(CanvasHeight, updated.Y + updated.Height + 96)));
+        SyncInspectorJson();
+        MarkDirty();
+    }
+
+    private void SetSnapDistance(string? value)
+    {
+        if (double.TryParse(value, out var number))
+        {
+            snapDistance = Math.Clamp((int)Math.Round(number), 0, 32);
+        }
+    }
+
+    private void SetElementVisibility(bool isVisible)
+    {
+        if (SelectedElement is null || SelectedBox is not { } box)
+        {
+            return;
+        }
+
+        PushHistory();
+        EditorGeometry.ApplyBox(SelectedElement, box with { IsVisible = isVisible });
+        SyncInspectorJson();
+        MarkDirty();
+    }
+
+    private void SetElementLock(bool isLocked)
+    {
+        if (SelectedElement is null || SelectedBox is not { } box)
+        {
+            return;
+        }
+
+        PushHistory();
+        EditorGeometry.ApplyBox(SelectedElement, box with { IsLocked = isLocked });
+        SyncInspectorJson();
+        MarkDirty();
+    }
+
+    private void ToggleElementVisibility(string elementId)
+    {
+        var element = FindElement(elementId);
+        var box = GetElementBox(elementId);
+        if (element is null || box is null)
+        {
+            return;
+        }
+
+        PushHistory();
+        EditorGeometry.ApplyBox(element, box with { IsVisible = !box.IsVisible });
+        SelectElement(elementId);
+        SyncInspectorJson();
+        MarkDirty();
+    }
+
+    private void ToggleElementLock(string elementId)
+    {
+        var element = FindElement(elementId);
+        var box = GetElementBox(elementId);
+        if (element is null || box is null)
+        {
+            return;
+        }
+
+        PushHistory();
+        EditorGeometry.ApplyBox(element, box with { IsLocked = !box.IsLocked });
+        SelectElement(elementId);
+        SyncInspectorJson();
+        MarkDirty();
+    }
+
+    private void ChangeSelectedZIndex(int delta)
+    {
+        if (selectedElementId is not null)
+        {
+            ChangeElementZIndex(selectedElementId, delta);
+        }
+    }
+
+    private void HandleZIndexRequest(EditorZIndexRequest request)
+    {
+        switch (request.Change)
+        {
+            case EditorZIndexChange.Forward:
+                ChangeElementZIndex(request.ElementId, 1);
+                break;
+            case EditorZIndexChange.Backward:
+                ChangeElementZIndex(request.ElementId, -1);
+                break;
+            case EditorZIndexChange.Front:
+                SetElementZIndex(request.ElementId, NextZIndex());
+                break;
+            case EditorZIndexChange.Back:
+                SetElementZIndex(request.ElementId, Math.Max(0, LowestZIndex() - 1));
+                break;
+        }
+    }
+
+    private void BringSelectedToFront()
+    {
+        if (selectedElementId is not null)
+        {
+            SetElementZIndex(selectedElementId, NextZIndex());
+        }
+    }
+
+    private void SendSelectedToBack()
+    {
+        if (selectedElementId is not null)
+        {
+            SetElementZIndex(selectedElementId, Math.Max(0, LowestZIndex() - 1));
+        }
+    }
+
+    private void ChangeElementZIndex(string elementId, int delta)
+    {
+        if (GetElementBox(elementId) is not { } box)
+        {
+            return;
+        }
+
+        SetElementZIndex(elementId, Math.Max(0, box.ZIndex + delta));
+    }
+
+    private void SetElementZIndex(string elementId, int zIndex)
+    {
+        var element = FindElement(elementId);
+        var box = GetElementBox(elementId);
+        if (element is null || box is null || box.IsLocked)
+        {
+            return;
+        }
+
+        PushHistory();
+        EditorGeometry.ApplyBox(element, box with { ZIndex = zIndex });
+        SelectElement(elementId);
+        SyncInspectorJson();
+        MarkDirty();
+    }
+
+    private int LowestZIndex()
+    {
+        return EnumerateEditorBoxes(pageLayout.Sections).Select(box => box.ZIndex).DefaultIfEmpty(1).Min();
+    }
+
+    private void NudgeSelectedElement(double deltaX, double deltaY)
+    {
+        if (SelectedElement is null || SelectedBox is not { } box || box.IsLocked)
+        {
+            return;
+        }
+
+        PushHistory();
+        var updated = box with
+        {
+            X = box.X + deltaX,
+            Y = box.Y + deltaY
+        };
+        EditorGeometry.ApplyBox(SelectedElement, EditorGeometry.ClampToCanvas(updated, CanvasModelWidth, Math.Max(CanvasHeight, updated.Y + updated.Height + 96)));
+        SyncInspectorJson();
+        MarkDirty();
+    }
+
+    private void ApplyJson()
+    {
+        if (SelectedElement is null)
+        {
+            return;
+        }
+
+        error = null;
+        try
+        {
+            var props = JsonNode.Parse(string.IsNullOrWhiteSpace(propsJson) ? "{}" : propsJson) as JsonObject
+                ?? throw new InvalidOperationException("Props JSON must be an object.");
+            var styles = JsonNode.Parse(string.IsNullOrWhiteSpace(stylesJson) ? "{}" : stylesJson) as JsonObject
+                ?? throw new InvalidOperationException("Styles JSON must be an object.");
+
+            PushHistory();
+            SelectedElement.Props = props;
+            SelectedElement.Styles = styles;
+            SyncInspectorJson();
+            MarkDirty();
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    private void UpdatePaletteDrop(double clientX, double clientY)
+    {
+        paletteDropX = Math.Clamp((clientX - canvasRect.Left) / ZoomScale, 0, Math.Max(0, CanvasModelWidth - 120));
+        paletteDropY = Math.Clamp((clientY - canvasRect.Top) / ZoomScale, 0, Math.Max(0, EffectiveCanvasHeight - 80));
+    }
+
+    private EditorElementBox? GetElementBox(string elementId)
+    {
+        if (liveBoxes.TryGetValue(elementId, out var live))
+        {
+            return live;
+        }
+
+        var context = FindElementContext(elementId);
+        return context is null ? null : EditorGeometry.GetBox(context.Value.Node, context.Value.Index, context.Value.Depth);
+    }
+
+    private bool ShouldRenderElementInEditor(string elementId)
+    {
+        return showHiddenElements ||
+               selectedElementId == elementId ||
+               GetElementBox(elementId)?.IsVisible != false;
+    }
+
+    private double NextAvailableY(string? parentId)
+    {
+        var target = GetChildren(parentId) ?? [];
+        return target.Select((section, index) => EditorGeometry.GetBox(section, index, parentId is null ? 0 : 1))
+            .Select(box => box.Y + box.Height)
+            .DefaultIfEmpty(0)
+            .Max() + 24;
+    }
+
+    private int NextZIndex()
+    {
+        return EnumerateEditorBoxes(pageLayout.Sections).Select(box => box.ZIndex).DefaultIfEmpty(0).Max() + 1;
+    }
+
+    private IEnumerable<EditorElementBox> EnumerateEditorBoxes(IEnumerable<PageSectionDefinition> elements, int depth = 0)
+    {
+        var index = 0;
+        foreach (var element in elements)
+        {
+            yield return liveBoxes.TryGetValue(element.Id, out var live) ? live : EditorGeometry.GetBox(element, index, depth);
+            foreach (var child in EnumerateEditorBoxes(element.Children, depth + 1))
+            {
+                yield return child;
+            }
+
+            index++;
+        }
+    }
+
+    private static EditorElementBox ResizeBox(EditorElementBox start, string handle, double deltaX, double deltaY, bool preserveAspectRatio)
+    {
+        var x = start.X;
+        var y = start.Y;
+        var width = start.Width;
+        var height = start.Height;
+
+        if (handle.Contains("e", StringComparison.OrdinalIgnoreCase))
+        {
+            width = start.Width + deltaX;
+        }
+
+        if (handle.Contains("s", StringComparison.OrdinalIgnoreCase))
+        {
+            height = start.Height + deltaY;
+        }
+
+        if (handle.Contains("w", StringComparison.OrdinalIgnoreCase))
+        {
+            x = start.X + deltaX;
+            width = start.Width - deltaX;
+            if (width < EditorGeometry.MinWidth)
+            {
+                x = start.X + start.Width - EditorGeometry.MinWidth;
+                width = EditorGeometry.MinWidth;
+            }
+        }
+
+        if (handle.Contains("n", StringComparison.OrdinalIgnoreCase))
+        {
+            y = start.Y + deltaY;
+            height = start.Height - deltaY;
+            if (height < EditorGeometry.MinHeight)
+            {
+                y = start.Y + start.Height - EditorGeometry.MinHeight;
+                height = EditorGeometry.MinHeight;
+            }
+        }
+
+        if (preserveAspectRatio && start.Height > 0)
+        {
+            var ratio = start.Width / start.Height;
+            var adjusted = ApplyAspectRatio(start, handle, x, y, width, height, ratio);
+            x = adjusted.X;
+            y = adjusted.Y;
+            width = adjusted.Width;
+            height = adjusted.Height;
+        }
+
+        return start with
+        {
+            X = x,
+            Y = y,
+            Width = Math.Max(EditorGeometry.MinWidth, width),
+            Height = Math.Max(EditorGeometry.MinHeight, height)
+        };
+    }
+
+    private static EditorElementBox ApplyAspectRatio(EditorElementBox start, string handle, double x, double y, double width, double height, double ratio)
+    {
+        var usesHorizontal = handle.Contains("e", StringComparison.OrdinalIgnoreCase) || handle.Contains("w", StringComparison.OrdinalIgnoreCase);
+        var usesVertical = handle.Contains("n", StringComparison.OrdinalIgnoreCase) || handle.Contains("s", StringComparison.OrdinalIgnoreCase);
+
+        if (!usesHorizontal && !usesVertical)
+        {
+            return start with { X = x, Y = y, Width = width, Height = height };
+        }
+
+        if (usesHorizontal && (!usesVertical || Math.Abs(width - start.Width) >= Math.Abs(height - start.Height) * ratio))
+        {
+            height = width / ratio;
+        }
+        else
+        {
+            width = height * ratio;
+        }
+
+        if (handle.Contains("w", StringComparison.OrdinalIgnoreCase))
+        {
+            x = start.X + start.Width - width;
+        }
+
+        if (handle.Contains("n", StringComparison.OrdinalIgnoreCase))
+        {
+            y = start.Y + start.Height - height;
+        }
+
+        return start with { X = x, Y = y, Width = width, Height = height };
+    }
+
+    private static bool HasMeaningfulMovement(EditorElementBox start, EditorElementBox current)
+    {
+        return Math.Abs(start.X - current.X) > .5 ||
+               Math.Abs(start.Y - current.Y) > .5 ||
+               Math.Abs(start.Width - current.Width) > .5 ||
+               Math.Abs(start.Height - current.Height) > .5;
+    }
+
+    private static bool IsAspectRatioResizeElement(PageSectionDefinition element)
+    {
+        return element.Type.Equals("image", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task<EditorCanvasRect> GetCanvasRectAsync()
+    {
+        try
+        {
+            var rect = await JS.InvokeAsync<EditorCanvasRect>("platformBuilder.getRect", canvasRef);
+            if (rect.Width > 0 && rect.Height > 0)
+            {
+                canvasRectMeasured = true;
+                return rect;
+            }
+
+            canvasRectMeasured = false;
+            return new EditorCanvasRect { Width = DefaultCanvasModelWidth * ZoomScale, Height = CanvasHeight * ZoomScale };
+        }
+        catch
+        {
+            canvasRectMeasured = false;
+            return new EditorCanvasRect { Width = DefaultCanvasModelWidth * ZoomScale, Height = CanvasHeight * ZoomScale };
+        }
+    }
+
+    private async Task CapturePointerAsync(long pointerId)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("platformBuilder.capturePointer", canvasRef, pointerId);
+        }
+        catch
+        {
+            // Pointer capture is a progressive enhancement for fast drags.
+        }
+    }
+
+    private async Task ReleasePointerAsync(long pointerId)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("platformBuilder.releasePointer", canvasRef, pointerId);
+        }
+        catch
+        {
+            // The browser may already have released the pointer.
+        }
+    }
+
+    private async Task FocusCanvasAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("platformBuilder.focusElement", canvasRef);
+        }
+        catch
+        {
+            // Keyboard shortcuts still work when focus is already inside the editor.
+        }
+    }
+
+    private PageSectionDefinition CreateElement(string? type)
+    {
+        type = NormalizeElementType(type);
+        var element = new PageSectionDefinition
+        {
+            Id = Guid.NewGuid().ToString("n"),
+            Type = type,
+            Props = DefaultProps(type),
+            Styles = DefaultStyles(type)
+        };
+
+        if (string.Equals(type, "form", StringComparison.OrdinalIgnoreCase))
+        {
+            element.Children.Add(CreateElement("input"));
+        }
+
+        return element;
+    }
+
+    private static string NormalizeElementType(string? type)
+    {
+        return string.IsNullOrWhiteSpace(type) ? DefaultElementType : type;
+    }
+
+    private static JsonObject DefaultProps(string? type)
+    {
+        type = NormalizeElementType(type);
+        var json = type switch
+        {
+            "hero" => """{"title":"Welcome to our store","subtitle":"Best products online","imageUrl":"https://placehold.co/1600x700?text=Hero","buttonText":"Shop now","buttonUrl":"/products"}""",
+            "text" => """{"heading":"Section heading","text":"Write section copy here."}""",
+            "image" => """{"imageUrl":"https://placehold.co/1400x700?text=Image","altText":"","objectFit":"cover","caption":"","overlayText":"","overlayPosition":"center","overlayColor":"#ffffff","overlayBackground":"rgba(15,23,42,.45)"}""",
+            "logo" => """{"useStoreLogo":true,"logoUrl":"","altText":"","objectFit":"contain","align":"center","showBrandText":false,"brandText":"Store","linkUrl":"/"}""",
+            "productGrid" => """{"heading":"Products","layout":"grid","columns":4,"limit":8,"gap":"16px","imageRatio":"4 / 3","showTitle":true,"showPrice":true,"showDescription":false,"showButton":true,"buttonText":"Add to cart","sort":"name"}""",
+            "categoryGrid" => """{"heading":"Categories","columns":4}""",
+            "button" => """{"text":"Shop now","url":"/products","align":"start","buttonBackground":"#0f5ea8","buttonColor":"#ffffff","hoverBackground":"#0b4d89","buttonRadius":"8px"}""",
+            "banner" => """{"title":"Limited offer","subtitle":"Promotional copy","buttonText":"Browse","buttonUrl":"/products"}""",
+            "navBar" => """{"useStoreName":true,"autoLinks":true,"showLogo":true,"logoUrl":"","logoAlt":"","logoSize":"42px","logoPlacement":"beforeName","hideBrandText":false,"brand":"Store Name","brandPosition":"left","linksPosition":"center","ctaPosition":"right","navLayout":"spread","navPosition":"normal","navWidth":"contained","linksAlignment":"center","navTop":"0px","links":[{"text":"Home","url":"/"},{"text":"Shop","url":"/products"},{"text":"Cart","url":"/cart"},{"text":"Contact","url":"#contact"}],"ctaText":"Shop now","ctaUrl":"/products"}""",
+            "featureGrid" => """{"heading":"Features","subtitle":"What makes this offer useful.","items":[{"title":"Fast setup","text":"Launch a polished page quickly."},{"title":"Responsive","text":"Works across desktop, tablet, and mobile."},{"title":"Editable","text":"Customize every section in the builder."}]}""",
+            "testimonials" => """{"heading":"Testimonials","items":[{"quote":"This page helped us explain our offer clearly.","author":"Customer","role":"Founder"},{"quote":"The template gave us a strong starting point.","author":"Customer","role":"Marketing Lead"}]}""",
+            "pricing" => """{"heading":"Pricing","plans":[{"name":"Starter","price":"$29","features":["Core features","Email support"],"cta":"Choose Starter"},{"name":"Growth","price":"$79","features":["Everything in Starter","Advanced support"],"cta":"Choose Growth"}]}""",
+            "footer" => """{"brand":"Store Name","text":"Secure checkout, fast fulfillment, and customer support for every order.","links":["Shipping","Returns","Privacy","Contact"]}""",
+            "featuredProducts" => """{"heading":"Featured products","layout":"grid","columns":4,"limit":4,"gap":"16px","imageRatio":"4 / 3","showTitle":true,"showPrice":true,"showDescription":false,"showButton":true,"buttonText":"Add to cart","sort":"name","productIds":[]}""",
+            "container" => """{"title":""}""",
+            "columns" => """{"heading":"","columns":2}""",
+            "spacer" => """{"height":"48px"}""",
+            "input" => """{"label":"Email","placeholder":"you@example.com","inputType":"email","required":false}""",
+            "form" => """{"title":"Contact us","buttonText":"Submit"}""",
+            "customHtml" => """{"html":"<div class=\"alert alert-light border\">Custom HTML block</div>"}""",
+            _ => "{}"
+        };
+
+        return JsonNode.Parse(json)?.AsObject() ?? [];
+    }
+
+    private static JsonObject DefaultStyles(string? type)
+    {
+        type = NormalizeElementType(type);
+        var json = type switch
+        {
+            "container" => """{"padding":"32px","backgroundColor":"#ffffff","borderRadius":"8px"}""",
+            "columns" => """{"gap":"16px"}""",
+            "logo" => """{"padding":"","backgroundColor":"transparent"}""",
+            "banner" => """{"backgroundColor":"#1f2937","color":"#ffffff","padding":"32px","borderRadius":"8px"}""",
+            "navBar" => """{"backgroundColor":"#ffffff","padding":"18px 24px"}""",
+            "featureGrid" => """{"backgroundColor":"#ffffff","padding":"64px 24px"}""",
+            "testimonials" => """{"backgroundColor":"#f8fafc","padding":"64px 24px"}""",
+            "pricing" => """{"backgroundColor":"#ffffff","padding":"64px 24px"}""",
+            "footer" => """{"backgroundColor":"#111827","color":"#ffffff","padding":"40px 24px"}""",
+            "spacer" => """{}""",
+            _ => """{"padding":""}"""
+        };
+
+        return JsonNode.Parse(json)?.AsObject() ?? [];
+    }
+
+    private PageSectionDefinition CloneElement(PageSectionDefinition source)
+    {
+        var clone = JsonSerializer.Deserialize<PageSectionDefinition>(
+            JsonSerializer.Serialize(source, JsonOptions),
+            JsonOptions) ?? CreateElement(source.Type);
+        AssignNewIds(clone);
+        return clone;
+    }
+
+    private static void AssignNewIds(PageSectionDefinition element)
+    {
+        element.Id = Guid.NewGuid().ToString("n");
+        foreach (var child in element.Children)
+        {
+            AssignNewIds(child);
+        }
+    }
+
+    private List<PageSectionDefinition>? GetChildren(string? parentId)
+    {
+        return parentId is null ? pageLayout.Sections : FindElement(parentId)?.Children;
+    }
+
+    private PageSectionDefinition? FindElement(string id)
+    {
+        return FindElementContext(id)?.Node;
+    }
+
+    private ElementContext? FindElementContext(string id)
+    {
+        return FindElementContext(id, pageLayout.Sections, null, 0);
+    }
+
+    private static ElementContext? FindElementContext(string id, List<PageSectionDefinition> siblings, string? parentId, int depth)
+    {
+        for (var i = 0; i < siblings.Count; i++)
+        {
+            var element = siblings[i];
+            if (element.Id == id)
+            {
+                return new ElementContext(element, siblings, i, parentId, depth);
+            }
+
+            var child = FindElementContext(id, element.Children, element.Id, depth + 1);
+            if (child is not null)
+            {
+                return child;
+            }
+        }
+
+        return null;
+    }
+
+    private bool IsDescendantOf(string elementId, string ancestorId)
+    {
+        var ancestor = FindElement(ancestorId);
+        return ancestor is not null && ContainsElement(ancestor.Children, elementId);
+    }
+
+    private static bool ContainsElement(IEnumerable<PageSectionDefinition> elements, string id)
+    {
+        foreach (var element in elements)
+        {
+            if (element.Id == id || ContainsElement(element.Children, id))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void NormalizeLayout()
+    {
+        pageLayout.PageId = string.IsNullOrWhiteSpace(pageLayout.PageId) ? PageId.ToString("n") : pageLayout.PageId;
+        NormalizeElements(pageLayout.Sections);
+        SyncNavigationElements(pageLayout.Sections);
+    }
+
+    private static void NormalizeElements(List<PageSectionDefinition> elements)
+    {
+        for (var i = 0; i < elements.Count; i++)
+        {
+            elements[i].Id = string.IsNullOrWhiteSpace(elements[i].Id) ? Guid.NewGuid().ToString("n") : elements[i].Id;
+            elements[i].Order = i + 1;
+            elements[i].Props ??= [];
+            elements[i].Styles ??= [];
+            elements[i].Children ??= [];
+            NormalizeElements(elements[i].Children);
+        }
+    }
+
+    private void SyncNavigationElements(IEnumerable<PageSectionDefinition> elements)
+    {
+        foreach (var element in elements)
+        {
+            if (element.Type.Equals("navBar", StringComparison.OrdinalIgnoreCase))
+            {
+                SyncNavigationElement(element);
+            }
+
+            SyncNavigationElements(element.Children);
+        }
+    }
+
+    private void SyncNavigationElement(PageSectionDefinition element)
+    {
+        var useStoreName = !element.Props.TryGetPropertyValue("useStoreName", out var useStoreNode) ||
+            useStoreNode is not JsonValue useStoreValue ||
+            !useStoreValue.TryGetValue<bool>(out var useStoreNameValue) ||
+            useStoreNameValue;
+        var autoLinks = !element.Props.TryGetPropertyValue("autoLinks", out var autoLinksNode) ||
+            autoLinksNode is not JsonValue autoLinksValue ||
+            !autoLinksValue.TryGetValue<bool>(out var autoLinksEnabled) ||
+            autoLinksEnabled;
+
+        if (useStoreName && currentStore is not null)
+        {
+            element.Props["brand"] = currentStore.Name;
+        }
+
+        if (autoLinks && sitePages is not null)
+        {
+            element.Props["links"] = new JsonArray(sitePages
+                .OrderByDescending(page => page.IsHomePage)
+                .ThenBy(page => page.Title)
+                .Select(page => new JsonObject
+                {
+                    ["text"] = page.IsHomePage ? "Home" : page.Title,
+                    ["url"] = page.IsHomePage ? "/" : page.Slug
+                })
+                .ToArray<JsonNode?>());
+        }
+
+        element.Props["useStoreName"] ??= true;
+        element.Props["autoLinks"] ??= true;
+        element.Props["showLogo"] ??= true;
+        element.Props["logoUrl"] ??= string.Empty;
+        element.Props["logoAlt"] ??= string.Empty;
+        element.Props["logoSize"] ??= "42px";
+        element.Props["logoPlacement"] ??= "beforeName";
+        element.Props["hideBrandText"] ??= false;
+        element.Props["brandPosition"] ??= "left";
+        element.Props["linksPosition"] ??= "center";
+        element.Props["ctaPosition"] ??= "right";
+        element.Props["navLayout"] ??= "spread";
+        element.Props["navPosition"] ??= "normal";
+        element.Props["navWidth"] ??= "contained";
+        element.Props["linksAlignment"] ??= "center";
+        element.Props["navTop"] ??= "0px";
+    }
+
+    private int CountElements(IEnumerable<PageSectionDefinition> elements)
+    {
+        var count = 0;
+        foreach (var element in elements)
+        {
+            count++;
+            count += CountElements(element.Children);
+        }
+
+        return count;
+    }
+
+    private void PushHistory()
+    {
+        undoStack.Push(Snapshot());
+        redoStack.Clear();
+        while (undoStack.Count > 60)
+        {
+            undoStack.TryPop(out _);
+        }
+    }
+
+    private string Snapshot()
+    {
+        return JsonSerializer.Serialize(pageLayout, JsonOptions);
+    }
+
+    private void ApplySnapshot(string json)
+    {
+        pageLayout = JsonSerializer.Deserialize<PageLayoutDocument>(json, JsonOptions) ?? new PageLayoutDocument { PageId = PageId.ToString("n") };
+        NormalizeLayout();
+        selectedElementId = SelectedElement is not null ? selectedElementId : pageLayout.Sections.FirstOrDefault()?.Id;
+        SyncInspectorJson();
+    }
+
+    private void SyncInspectorJson()
+    {
+        if (SelectedElement is null)
+        {
+            propsJson = "{}";
+            stylesJson = "{}";
+            return;
+        }
+
+        propsJson = JsonSerializer.Serialize(SelectedElement.Props, JsonOptions);
+        stylesJson = JsonSerializer.Serialize(SelectedElement.Styles, JsonOptions);
+    }
+
+    private void MarkDirty()
+    {
+        hasChanges = true;
+        message = null;
+    }
+
+    private readonly record struct ElementContext(
+        PageSectionDefinition Node,
+        List<PageSectionDefinition> Siblings,
+        int Index,
+        string? ParentId,
+        int Depth);
+
+    private sealed class EditorInteractionState
+    {
+        public string ElementId { get; set; } = string.Empty;
+        public EditorInteractionKind Kind { get; set; }
+        public string? Handle { get; set; }
+        public long PointerId { get; set; }
+        public double StartClientX { get; set; }
+        public double StartClientY { get; set; }
+        public EditorElementBox StartBox { get; set; } = new(string.Empty, 0, 0, 0, 0, 0, true, false);
+        public EditorElementBox CurrentBox { get; set; } = new(string.Empty, 0, 0, 0, 0, 0, true, false);
+        public bool PreserveAspectRatio { get; set; }
+        public bool HasMoved { get; set; }
+    }
+}
