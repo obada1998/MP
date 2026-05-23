@@ -1,11 +1,29 @@
 @using Platform.Blazor.Rendering
+@using System.Text.Json.Nodes
 
 <div class="mb-3">
     @if (!string.IsNullOrWhiteSpace(Label))
     {
-        <label class="form-label">@Label</label>
+        <label class="form-label" for="@InputId">@Label</label>
     }
-    <input class="form-control" type="@InputType" placeholder="@Placeholder" required="@Required" />
+
+    @if (InputKind.Equals("textarea", StringComparison.OrdinalIgnoreCase))
+    {
+        <textarea id="@InputId" class="form-control" placeholder="@Placeholder" required="@Required" @attributes="AdditionalAttributes"></textarea>
+    }
+    else if (InputKind.Equals("select", StringComparison.OrdinalIgnoreCase))
+    {
+        <select id="@InputId" class="form-select" required="@Required" @attributes="AdditionalAttributes">
+            @foreach (var option in Options)
+            {
+                <option value="@option.Value">@option.Label</option>
+            }
+        </select>
+    }
+    else
+    {
+        <input id="@InputId" class="form-control" type="@InputType" placeholder="@Placeholder" required="@Required" @attributes="AdditionalAttributes" />
+    }
 </div>
 
 @code {
@@ -15,5 +33,62 @@
     private string Label => JsonProps.GetString(Section.Props, "label", "Field label");
     private string Placeholder => JsonProps.GetString(Section.Props, "placeholder", "");
     private string InputType => JsonProps.GetString(Section.Props, "inputType", "text");
+    private string InputKind => JsonProps.GetString(Section.Props, "element", "input");
     private bool Required => JsonProps.GetBool(Section.Props, "required");
+    private string InputId => JsonProps.GetString(Section.Props, "id", Section.Id);
+
+    private IReadOnlyDictionary<string, object> AdditionalAttributes => GetAdditionalAttributes();
+
+    private IReadOnlyList<InputOption> Options => GetOptions();
+
+    private IReadOnlyDictionary<string, object> GetAdditionalAttributes()
+    {
+        if (!Section.Props.TryGetPropertyValue("attributes", out var node) || node is not JsonObject attributes)
+        {
+            return new Dictionary<string, object>();
+        }
+
+        var result = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in attributes)
+        {
+            if (string.IsNullOrWhiteSpace(key) || value is null)
+            {
+                continue;
+            }
+
+            result[key] = value.ToJsonString().Trim('"');
+        }
+
+        return result;
+    }
+
+    private IReadOnlyList<InputOption> GetOptions()
+    {
+        if (!Section.Props.TryGetPropertyValue("options", out var node) || node is not JsonArray array)
+        {
+            return [];
+        }
+
+        var options = new List<InputOption>();
+        foreach (var item in array)
+        {
+            if (item is JsonObject option)
+            {
+                var label = option["label"]?.ToString();
+                var value = option["value"]?.ToString() ?? label;
+                if (!string.IsNullOrWhiteSpace(label))
+                {
+                    options.Add(new InputOption(label, value ?? label));
+                }
+            }
+            else if (item is JsonValue raw && raw.TryGetValue<string>(out var rawValue) && !string.IsNullOrWhiteSpace(rawValue))
+            {
+                options.Add(new InputOption(rawValue, rawValue));
+            }
+        }
+
+        return options;
+    }
+
+    private sealed record InputOption(string Label, string Value);
 }
