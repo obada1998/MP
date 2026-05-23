@@ -150,7 +150,7 @@
             }
         }
 
-        return Regex.Split(trimmedRaw, @"[\n\r,;]+")
+        return Regex.Split(trimmedRaw, @"(?:\r?\n|;)+|,(?=\s*(?:https?://|www\.|/|data:))", RegexOptions.IgnoreCase)
             .Select(url => url.Trim('"', '\'', ' '))
             .Select(NormalizeUrl)
             .Where(url => !string.IsNullOrWhiteSpace(url))
