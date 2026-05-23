@@ -14,6 +14,7 @@ public static class PageComponentCatalog
             ["text"] = new("text", "Text block", "Rich text content for editorial sections."),
             ["image"] = new("image", "Image", "Responsive image with optional caption."),
             ["imageGallery"] = new("imageGallery", "Image gallery", "Gallery style image list."),
+            ["imageSlider"] = new("imageSlider", "Image slider", "Carousel with previous/next controls and selectable images."),
             ["videoEmbed"] = new("videoEmbed", "Video embed", "Embedded video element."),
             ["icon"] = new("icon", "Icon", "Icon or small vector symbol."),
             ["logo"] = new("logo", "Logo", "Store logo or custom logo image."),

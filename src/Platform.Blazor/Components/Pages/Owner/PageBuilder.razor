@@ -1158,6 +1158,11 @@
                 @PropField("Overlay color", "overlayColor", "#ffffff", "color")
                 @PropField("Overlay background", "overlayBackground", "rgba(15,23,42,.45)")
             </div>,
+            "imageGallery" or "imageSlider" => @<div>
+                @PropArea("Image URLs", "imageUrls", "https://placehold.co/1200x600?text=Slide+1, https://placehold.co/1200x600?text=Slide+2, https://placehold.co/1200x600?text=Slide+3")
+                <div class="text-muted small">Use comma-separated URLs, or edit <code>items</code> in Advanced JSON for url/alt/caption.</div>
+                @PropSelect("Image fit", "objectFit", ["cover", "contain", "fill", "none"])
+            </div>,
             "logo" => @<div>
                 @PropCheckbox("Use store logo", "useStoreLogo", true)
                 @PropField("Logo URL", "logoUrl", "")
@@ -1913,6 +1918,7 @@
             "hero" => """{"title":"Welcome to our store","subtitle":"Best products online","imageUrl":"https://placehold.co/1600x700?text=Hero","buttonText":"Shop now","buttonUrl":"/products"}""",
             "text" => """{"heading":"Section heading","text":"Write section copy here."}""",
             "image" => """{"imageUrl":"https://placehold.co/1400x700?text=Image","altText":"","objectFit":"cover","caption":"","overlayText":"","overlayPosition":"center","overlayColor":"#ffffff","overlayBackground":"rgba(15,23,42,.45)"}""",
+            "imageGallery" or "imageSlider" => """{"imageUrls":"https://placehold.co/1200x600?text=Slide+1, https://placehold.co/1200x600?text=Slide+2, https://placehold.co/1200x600?text=Slide+3","objectFit":"cover"}""",
             "logo" => """{"useStoreLogo":true,"logoUrl":"","altText":"","objectFit":"contain","align":"center","showBrandText":false,"brandText":"Store","linkUrl":"/"}""",
             "productGrid" => """{"heading":"Products","layout":"grid","columns":4,"limit":8,"gap":"16px","imageRatio":"4 / 3","showTitle":true,"showPrice":true,"showDescription":false,"showButton":true,"buttonText":"Add to cart","sort":"name"}""",
             "categoryGrid" => """{"heading":"Categories","columns":4}""",
