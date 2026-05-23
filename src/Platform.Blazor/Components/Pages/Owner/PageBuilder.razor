@@ -1159,8 +1159,10 @@
                 @PropField("Overlay background", "overlayBackground", "rgba(15,23,42,.45)")
             </div>,
             "imageGallery" or "imageSlider" => @<div>
-                @PropArea("Image URLs", "imageUrls", "https://placehold.co/1200x600?text=Slide+1, https://placehold.co/1200x600?text=Slide+2, https://placehold.co/1200x600?text=Slide+3")
-                <div class="text-muted small">Use comma-separated URLs, or edit <code>items</code> in Advanced JSON for url/alt/caption.</div>
+                @PropField("Image URL 1", "imageUrl1", "https://placehold.co/1200x600?text=Slide+1")
+                @PropField("Image URL 2", "imageUrl2", "https://placehold.co/1200x600?text=Slide+2")
+                @PropField("Image URL 3", "imageUrl3", "https://placehold.co/1200x600?text=Slide+3")
+                <div class="text-muted small">Use up to 3 image URLs (one per field). You can leave unused fields empty.</div>
                 @PropSelect("Image fit", "objectFit", ["cover", "contain", "fill", "none"])
             </div>,
             "logo" => @<div>

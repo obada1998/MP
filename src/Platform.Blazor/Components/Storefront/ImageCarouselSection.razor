@@ -90,6 +90,22 @@
 
     private IReadOnlyList<SliderImage> BuildImages()
     {
+        var fixedUrls = BuildFixedImageUrls();
+        if (fixedUrls.Length > 0)
+        {
+            CurrentIndex = Math.Clamp(CurrentIndex, 0, fixedUrls.Length - 1);
+            return fixedUrls.Select((url, idx) => new SliderImage(url, $"Slide {idx + 1}", string.Empty)).ToArray();
+        }
+
+        var csv = JsonProps.GetString(Section.Props, "imageUrls", "");
+        var urls = ParseImageUrls(csv);
+
+        if (urls.Length > 0)
+        {
+            CurrentIndex = Math.Clamp(CurrentIndex, 0, urls.Length - 1);
+            return urls.Select((url, idx) => new SliderImage(url, $"Slide {idx + 1}", string.Empty)).ToArray();
+        }
+
         if (Section.Props.TryGetPropertyValue("items", out var itemsNode) && itemsNode is JsonArray array)
         {
             var parsed = array
@@ -108,9 +124,6 @@
             }
         }
 
-        var csv = JsonProps.GetString(Section.Props, "imageUrls", "");
-        var urls = ParseImageUrls(csv);
-
         if (urls.Length == 0)
         {
             urls =
@@ -127,6 +140,23 @@
     }
 
 
+
+    private string[] BuildFixedImageUrls()
+    {
+        var candidates = new[]
+        {
+            JsonProps.GetString(Section.Props, "imageUrl1", ""),
+            JsonProps.GetString(Section.Props, "imageUrl2", ""),
+            JsonProps.GetString(Section.Props, "imageUrl3", "")
+        };
+
+        return candidates
+            .Select(NormalizeUrl)
+            .Where(url => !string.IsNullOrWhiteSpace(url))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
     private static string[] ParseImageUrls(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
@@ -136,20 +166,38 @@
 
         var trimmed = raw.Trim();
 
+        // Normalize common pasted HTML line breaks into newlines.
+        trimmed = Regex.Replace(trimmed, @"<br\s*/?>", "\n", RegexOptions.IgnoreCase);
+
         if (trimmed.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
         {
             return [trimmed.Trim('"', '\'', ' ')];
         }
 
         // Support comma-separated URLs as documented in the page builder UI.
-        var separators = new Regex(@"(?:\r\n|\r|\n|;|,)");
+        var separators = new Regex(@"(?:\r\n|\r|\n|;|,(?=\s*(?:https?://|www\.|data:)))", RegexOptions.IgnoreCase);
 
-        return separators.Split(trimmed)
+        var parsed = separators.Split(trimmed)
             .Select(url => url.Trim('"', '\'', ' '))
             .Select(NormalizeUrl)
             .Where(url => !string.IsNullOrWhiteSpace(url))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+
+        if (parsed.Length > 1)
+        {
+            return parsed;
+        }
+
+        // Also support users pasting multiple URLs separated only by whitespace.
+        var matches = Regex.Matches(trimmed, @"(?:https?://|www\.)[^\s"'<>]+", RegexOptions.IgnoreCase)
+            .Select(match => match.Value.Trim('"', '\'', ' '))
+            .Select(NormalizeUrl)
+            .Where(url => !string.IsNullOrWhiteSpace(url))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return matches.Length > 0 ? matches : parsed;
     }
 
     private static string NormalizeUrl(string url)
@@ -159,12 +207,26 @@
             return string.Empty;
         }
 
-        if (url.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+        var normalized = url.Trim().TrimEnd(',', ';');
+
+        if (normalized.StartsWith("//", StringComparison.Ordinal))
         {
-            return $"https://{url}";
+            return $"https:{normalized}";
         }
 
-        return url;
+        if (normalized.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"https://{normalized}";
+        }
+
+        if (!normalized.Contains("://", StringComparison.Ordinal) &&
+            normalized.Contains('.', StringComparison.Ordinal) &&
+            !normalized.StartsWith("/", StringComparison.Ordinal))
+        {
+            return $"https://{normalized}";
+        }
+
+        return normalized;
     }
 
     private sealed record SliderImage(string Url, string Alt, string Caption);
