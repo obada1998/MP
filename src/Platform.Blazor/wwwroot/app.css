@@ -935,7 +935,7 @@ a, .btn-link {
     display: flex;
     flex-direction: column;
     background: #e8edf3;
-    overflow: visible;
+    overflow: hidden;
 }
 
 .editor-stage-toolbar {
@@ -1083,7 +1083,8 @@ a, .btn-link {
 .editor-canvas-wrap {
     flex: 1;
     min-height: 0;
-    overflow: visible;
+    overflow: auto;
+    overscroll-behavior: contain;
     padding: .5rem;
     background: #e8edf3;
 }
