@@ -2,8 +2,11 @@
 @using Platform.Blazor.Editor
 @using Platform.Blazor.Rendering
 
-<article class="editor-node @(IsSelected ? "selected" : "") @(CanHaveChildren ? "can-contain" : "") @(Box.IsLocked ? "locked" : "") @(Box.IsVisible ? "" : "is-hidden")"
+<article class="editor-node @(IsSelected ? "selected" : "") @(CanHaveChildren ? "can-contain" : "") @(Box.IsLocked ? "locked" : "") @(Box.IsVisible ? "" : "is-hidden") @(IsDragging ? "is-dragging" : "")"
          style="@NodeStyle"
+         draggable="@(!Box.IsLocked)"
+         @ondragstart="HandleDragStart"
+         @ondragend="HandleDragEnd"
          @onclick:stopPropagation="true"
          @onclick="() => SelectRequested.InvokeAsync(Section.Id)">
     @if (!Box.IsVisible)
@@ -111,7 +114,10 @@
                                       ToggleLockRequested="ToggleLockRequested"
                                       ZIndexRequested="ZIndexRequested"
                                       InlineEditRequested="InlineEditRequested"
-                                      MoveRequested="MoveRequested" />
+                                      MoveRequested="MoveRequested"
+                                      DragStarted="DragStarted"
+                                      DragEnded="DragEnded"
+                                      DraggingElementId="@DraggingElementId" />
                 }
                 @DropZone(new EditorDropTarget(Section.Id, childIndex + 1))
             }
@@ -140,8 +146,12 @@
     [Parameter] public EventCallback<EditorZIndexRequest> ZIndexRequested { get; set; }
     [Parameter] public EventCallback<EditorInlineEditRequest> InlineEditRequested { get; set; }
     [Parameter] public EventCallback<EditorMoveRequest> MoveRequested { get; set; }
+    [Parameter] public EventCallback<string> DragStarted { get; set; }
+    [Parameter] public EventCallback DragEnded { get; set; }
+    [Parameter] public string? DraggingElementId { get; set; }
 
     private bool isInlineEditing;
+    private bool IsDragging => string.Equals(DraggingElementId, Section.Id, StringComparison.Ordinal);
     private EditorComponentDefinition Definition => EditorComponentCatalog.Get(Section.Type);
     private bool IsSelected => SelectedElementId == Section.Id;
     private bool CanHaveChildren => EditorComponentCatalog.CanContainChildren(Section.Type);
@@ -190,6 +200,28 @@
         return ActiveDropTarget is not null &&
                ActiveDropTarget.ParentId == target.ParentId &&
                ActiveDropTarget.Index == target.Index;
+    }
+
+    private async Task HandleDragStart(DragEventArgs args)
+    {
+        if (Box.IsLocked)
+        {
+            return;
+        }
+
+        if (args.DataTransfer is not null)
+        {
+            args.DataTransfer.DropEffect = "move";
+            args.DataTransfer.EffectAllowed = "move";
+        }
+
+        await SelectRequested.InvokeAsync(Section.Id);
+        await DragStarted.InvokeAsync(Section.Id);
+    }
+
+    private async Task HandleDragEnd()
+    {
+        await DragEnded.InvokeAsync();
     }
 
     private async Task BeginMove(PointerEventArgs args)

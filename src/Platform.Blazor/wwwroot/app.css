@@ -1190,6 +1190,7 @@ a, .btn-link {
     border: 1px dashed transparent;
     border-radius: 8px;
     margin: .25rem 0;
+    position: relative;
     transition: min-height .15s ease, background-color .15s ease, border-color .15s ease;
 }
 
@@ -1207,6 +1208,16 @@ a, .btn-link {
     min-height: 44px;
     border-color: #0f766e;
     background: #e6f6f4;
+}
+
+.editor-drop-zone.active::after {
+    content: "";
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    top: 50%;
+    border-top: 2px solid #0f766e;
+    transform: translateY(-50%);
 }
 
 .editor-node {
@@ -1228,9 +1239,24 @@ a, .btn-link {
     box-shadow: 0 10px 24px rgba(15, 23, 42, .08);
 }
 
+.editor-node:hover::after {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    border: 1px dashed rgba(37, 99, 235, .45);
+    border-radius: 10px;
+    pointer-events: none;
+}
+
 .editor-node.selected {
     border-color: #2563eb;
     box-shadow: 0 0 0 3px rgba(37, 99, 235, .18), 0 16px 34px rgba(15, 23, 42, .14);
+}
+
+.editor-node.is-dragging {
+    opacity: .45;
+    border-style: dashed;
+    box-shadow: 0 0 0 2px rgba(15, 118, 110, .3);
 }
 
 .editor-node.selected .editor-node-quick-actions {
